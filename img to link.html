@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firebase Image Uploader</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background-color: #f5f8ff; }
+    .card { background: white; padding: 20px; border-radius: 12px; max-width: 400px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+    .form-group { margin-bottom: 15px; }
+    .form-label { display: block; margin-bottom: 5px; font-weight: 600; }
+    .form-control { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    .btn { width: 100%; padding: 10px; background-color: #1565c0; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    .btn:disabled { background-color: #90caf9; }
+    #resultArea { margin-top: 20px; display: none; }
+    .url-box { background: #e8f1fe; padding: 10px; border-radius: 8px; font-size: 14px; word-break: break-all; margin-bottom: 10px; }
+    .copy-btn { background-color: #2e7d32; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; width: 100%; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Photo Uploader</h2>
+    <div class="form-group">
+      <label class="form-label">Select Photo</label>
+      <input type="file" id="fileInput" class="form-control" accept="image/*">
+    </div>
+    <button id="uploadBtn" class="btn" onclick="uploadImage()">Upload and Get Link</button>
+
+    <div id="resultArea">
+      <label class="form-label">Image URL:</label>
+      <div id="urlDisplay" class="url-box"></div>
+      <button class="copy-btn" onclick="copyUrl()">Copy URL</button>
+    </div>
+  </div>
+
+  <script>
+	const firebaseConfig = {
+  	   apiKey: "AIzaSyCU5sOxrPB4uv0IzUhOKL4h5_4HmtmVPYg",
+  		authDomain: "rdx-bd-tour.firebaseapp.com",
+	    databaseURL: "https://rdx-bd-tour-default-rtdb.asia-southeast1.firebasedatabase.app",
+  		projectId: "rdx-bd-tour",
+		storageBucket: "rdx-bd-tour.firebasestorage.app",
+		messagingSenderId: "421778019485",
+		appId: "1:421778019485:web:dad0e0d5e5c2e7fa573074",
+		measurementId: "G-R6TSEM5FLR"
+	};
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const storage = firebase.storage();
+
+    let generatedUrl = '';
+
+    async function uploadImage() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+      const uploadBtn = document.getElementById('uploadBtn');
+
+      if (!file) {
+        alert('Please select a file first.');
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      uploadBtn.innerText = 'Uploading...';
+
+      const storageRef = storage.ref('images/' + Date.now() + '_' + file.name);
+
+      try {
+        const snapshot = await storageRef.put(file);
+        generatedUrl = await snapshot.ref.getDownloadURL();
+
+        document.getElementById('urlDisplay').textContent = generatedUrl;
+        document.getElementById('resultArea').style.display = 'block';
+      } catch (error) {
+        alert('Upload failed: ' + error.message);
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.innerText = 'Upload and Get Link';
+      }
+    }
+
+    function copyUrl() {
+      if (generatedUrl) {
+        navigator.clipboard.writeText(generatedUrl).then(() => {
+          alert('URL copied to clipboard!');
+        }).catch(err => {
+          alert('Failed to copy.');
+        });
+      }
+    }
+  </script>
+</body>
+</html>
