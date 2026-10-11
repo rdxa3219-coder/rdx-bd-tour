@@ -692,7 +692,6 @@
           </div>
         </section>
 
-        <!-- আপডেট করা ডিপোজিট তালিকা: যেখানে ইউজারের নাম, TrxID এবং Approve/Reject বাটন থাকবে -->
         <section id="secDeposits" style="display: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <input type="text" id="depositSearchInput" class="form-control" placeholder="Search TrxID..." style="width: 240px;" oninput="renderDepositsTable()">
@@ -1234,17 +1233,26 @@
       }
 
       try {
+        // ১. আগে ডাটাবেস থেকে সঠিক অ্যাডমিন ক্রেডেনশিয়ালস রিড করা
+        const snap = await db.ref('admin_credentials').once('value');
+        const creds = snap.val() || {};
+
+        // ২. ইউজার যদি অ্যাডমিন ইমেইল না দিয়ে সাধারণ একাউন্টের ইমেইল দেয় তবে সাথে সাথে আটকে দেওয়া
+        if (email.toLowerCase() !== (creds.email || '').toLowerCase()) {
+          throw new Error('Access Denied: You are not authorized as an administrator.');
+        }
+
         let authSuccess = false;
-        try {
-          await auth.signInWithEmailAndPassword(email, pass);
+
+        // ৩. অ্যাডমিন পাসওয়ার্ড ভ্যালিডেশন
+        if (pass === creds.password) {
           authSuccess = true;
-        } catch (authErr) {
-          await auth.signInAnonymously();
-          const snap = await db.ref('admin_credentials').once('value');
-          const creds = snap.val() || {};
-          if (creds.email === email && creds.password === pass) {
+        } else {
+          try {
+            await auth.signInWithEmailAndPassword(email, pass);
             authSuccess = true;
-            document.getElementById('securityBanner').style.display = 'flex';
+          } catch (authErr) {
+            authSuccess = false;
           }
         }
 
@@ -1255,7 +1263,7 @@
           loadAllData();
           showToast('Admin authorized successfully!', 'success');
         } else {
-          throw new Error('Invalid administrative credentials');
+          throw new Error('Invalid administrative password.');
         }
       } catch (err) {
         const attempts = (Number(localStorage.getItem('admin_failed_attempts')) || 0) + 1;
@@ -1328,7 +1336,6 @@
       const totalUsers = Object.keys(dataUsers).length;
       document.getElementById('dashTotalUsers').textContent = totalUsers;
 
-      // সরাসরি ইউজারদের টোটাল ডিপোজিট থেকে যোগ করা হবে, হিস্ট্রি ডিলিট করলেও এটি কমবে না
       let totalDepositedAmt = 0;
       Object.values(dataUsers).forEach(u => {
         totalDepositedAmt += (Number(u.totalDeposited) || Number(u.deposit) || 0);
@@ -1998,7 +2005,6 @@
       }
     }
 
-    // আপডেট করা ডিপোজিট টেবিল
     function renderDepositsTable() {
       const tbody = document.getElementById('depositsTableBody');
       const q = (document.getElementById('depositSearchInput').value || '').toLowerCase();
@@ -2047,7 +2053,6 @@
       }).join('');
     }
 
-    // ডিপোজিট Approve করা
     async function approveDeposit(txid) {
       const deposit = dataAutoPay[txid];
       if (!deposit) return;
@@ -2058,7 +2063,6 @@
         const uid = deposit.userUid;
         const amt = Number(deposit.amount);
 
-        // ১. ইউজারের ব্যালেন্স বাড়ানো
         const userSnap = await db.ref(`users/${uid}`).once('value');
         const userData = userSnap.val() || {};
         const newDep = (Number(userData.deposit) || 0) + amt;
@@ -2069,14 +2073,12 @@
           totalDeposited: newTotalDep
         });
 
-        // ২. Auto_Pay নোডে স্ট্যাটাস কমপ্লিট করা
         await db.ref(`Auto_Pay/${txid}`).update({
           status: 'completed',
           usedBy: uid,
           processedAt: firebase.database.ServerValue.TIMESTAMP
         });
 
-        // ৩. ট্রানজেকশনে স্ট্যাটাস সাকসেস করা
         await db.ref(`transactions/${uid}/${txid}`).update({
           status: 'completed',
           processedAt: firebase.database.ServerValue.TIMESTAMP
@@ -2088,7 +2090,6 @@
       }
     }
 
-    // ডিপোজিট Reject করা
     async function rejectDeposit(txid) {
       const deposit = dataAutoPay[txid];
       if (!deposit) return;
@@ -2137,7 +2138,6 @@
       }
     }
 
-    // সুরক্ষিত ট্রানজেকশন ডিলিট ফাংশন (মুছলে ইউজারের ব্যালেন্সে কোনো প্রভাব পড়বে না)
     async function deleteTrxId(txid) {
       if (!confirm(`আপনি কি নিশ্চিত ${txid} ট্রানজেকশন রেকর্ডটি মুছে ফেলতে চান? (মনে রাখবেন: ইউজারের যুক্ত হওয়া ব্যালেন্স অক্ষত থাকবে)`)) return;
       try {
