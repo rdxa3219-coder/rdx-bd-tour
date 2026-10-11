@@ -446,7 +446,7 @@
   <div id="securityBanner" class="warning-banner">
     <div style="display: flex; align-items: center; gap: 8px;">
       <i data-lucide="alert-triangle" style="width: 16px;"></i>
-      <span>Security Alert: Logged in using fallback credentials. Ensure Firebase rules and secure email authentication are properly configured.</span>
+      <span>Security Alert: Logged in using database credentials.</span>
     </div>
     <button onclick="document.getElementById('securityBanner').style.display = 'none'" style="background: none; border: none; cursor: pointer; color: #E65100;">✕</button>
   </div>
@@ -1148,16 +1148,16 @@
   </div>
 
   <script>
-	const firebaseConfig = {
-  	   apiKey: "AIzaSyCU5sOxrPB4uv0IzUhOKL4h5_4HmtmVPYg",
-  		authDomain: "rdx-bd-tour.firebaseapp.com",
-	    databaseURL: "https://rdx-bd-tour-default-rtdb.asia-southeast1.firebasedatabase.app",
-  		projectId: "rdx-bd-tour",
-		storageBucket: "rdx-bd-tour.firebasestorage.app",
-		messagingSenderId: "421778019485",
-		appId: "1:421778019485:web:dad0e0d5e5c2e7fa573074",
-		measurementId: "G-R6TSEM5FLR"
-	};
+    const firebaseConfig = {
+      apiKey: "AIzaSyCU5sOxrPB4uv0IzUhOKL4h5_4HmtmVPYg",
+      authDomain: "rdx-bd-tour.firebaseapp.com",
+      databaseURL: "https://rdx-bd-tour-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "rdx-bd-tour",
+      storageBucket: "rdx-bd-tour.firebasestorage.app",
+      messagingSenderId: "421778019485",
+      appId: "1:421778019485:web:dad0e0d5e5c2e7fa573074",
+      measurementId: "G-R6TSEM5FLR"
+    };
 
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
@@ -1233,26 +1233,28 @@
       }
 
       try {
-        // ১. আগে ডাটাবেস থেকে সঠিক অ্যাডমিন ক্রেডেনশিয়ালস রিড করা
+        // ১. ডাটাবেজ থেকে আসল অ্যাডমিন ক্রেডেনশিয়ালস রিড করা
         const snap = await db.ref('admin_credentials').once('value');
         const creds = snap.val() || {};
 
-        // ২. ইউজার যদি অ্যাডমিন ইমেইল না দিয়ে সাধারণ একাউন্টের ইমেইল দেয় তবে সাথে সাথে আটকে দেওয়া
-        if (email.toLowerCase() !== (creds.email || '').toLowerCase()) {
+        const adminEmail = (creds.email || 'rdxa3219@gmail.com').toLowerCase();
+        const adminPass = creds.password;
+
+        // ২. সাধারণ ইউজারদের আইডি ইমেইল দিয়ে লগইন সম্পূর্ণ ব্লক করা
+        if (email.toLowerCase() !== adminEmail) {
           throw new Error('Access Denied: You are not authorized as an administrator.');
         }
 
         let authSuccess = false;
 
         // ৩. অ্যাডমিন পাসওয়ার্ড ভ্যালিডেশন
-        if (pass === creds.password) {
+        try {
+          await auth.signInWithEmailAndPassword(email, pass);
           authSuccess = true;
-        } else {
-          try {
-            await auth.signInWithEmailAndPassword(email, pass);
+        } catch (authErr) {
+          if (pass === adminPass) {
+            await auth.signInAnonymously();
             authSuccess = true;
-          } catch (authErr) {
-            authSuccess = false;
           }
         }
 
@@ -2139,10 +2141,10 @@
     }
 
     async function deleteTrxId(txid) {
-      if (!confirm(`আপনি কি নিশ্চিত ${txid} ট্রানজেকশন রেকর্ডটি মুছে ফেলতে চান? (মনে রাখবেন: ইউজারের যুক্ত হওয়া ব্যালেন্স অক্ষত থাকবে)`)) return;
+      if (!confirm(`আপনি কি নিশ্চিত ${txid} ট্রানজেকশন রেকর্ডটি মুছে ফেলতে চান? (ইউজারের ব্যালেন্স অক্ষত থাকবে)`)) return;
       try {
         await db.ref(`Auto_Pay/${txid}`).remove();
-        showToast('TrxID রেকর্ডটি মুছে ফেলা হয়েছে। ইউজারের ব্যালেন্স অক্ষত রয়েছে।', 'default');
+        showToast('TrxID রেকর্ডটি মুছে ফেলা হয়েছে।', 'default');
       } catch (err) {
         showToast('মুছতে ব্যর্থ হয়েছে: ' + err.message, 'error');
       }
