@@ -215,6 +215,15 @@
       50% { transform: scale(1.15); opacity: 1; }
       100% { transform: scale(0.95); opacity: 0.9; }
     }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
     @keyframes spin {
       100% { transform: rotate(360deg); }
     }
@@ -247,6 +256,9 @@
       background: linear-gradient(135deg, var(--primary), var(--primary-light));
       color: #FFF;
       box-shadow: 0 4px 14px rgba(21,101,192,0.28);
+    }
+    .btn-primary:hover {
+      filter: brightness(1.05);
     }
     .btn-secondary {
       background: var(--primary-pale);
@@ -977,7 +989,6 @@
         <div class="logo-badge">BD</div>
         <span class="logo-text">BD TOUR</span>
       </div>
-      <!-- নোটিফিকেশন আইকন: ট্যাপ করলে পারমিশন চেক ও লিস্ট ওপেন হবে -->
       <button class="icon-btn" onclick="handleNotificationIconClick()">
         <i data-lucide="bell" style="width: 20px; height: 20px;"></i>
         <span class="badge-count" id="headerNotifBadge" style="display: none;">0</span>
@@ -1560,6 +1571,7 @@
         document.getElementById('authScreen').style.display = 'none';
         listenForSingleDeviceSession(user.uid);
         attachRealtimeListeners();
+        listenToUserSpecificNotifications(user.uid);
       } else {
         currentUser = null;
         currentUserData = null;
@@ -2621,7 +2633,6 @@
       });
     }
 
-    // নোটিফিকেশন আইকন ক্লিক হ্যান্ডলার
     function handleNotificationIconClick() {
       if ('Notification' in window && Notification.permission !== 'granted') {
         Notification.requestPermission().then((perm) => {
@@ -2634,7 +2645,6 @@
       openSubpage('subNotifications');
     }
 
-    // সার্ভিস ওয়ার্কার বা ব্রাউজার দিয়ে নোটিফিকেশন দেখানো
     function pushToDeviceNotification(title, body) {
       if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
@@ -2659,18 +2669,31 @@
       }
     }
 
-    // ব্যাকগ্রাউন্ড লিসেনার ও সার্ভিস ওয়ার্কার রেজিস্ট্রেশন
+    // শুধুমাত্র এই ইউজারের জয়েন করা ম্যাচের নোটিফিকেশন লিসেনার
+    function listenToUserSpecificNotifications(uid) {
+      const launchTime = Date.now();
+      const userNotifRef = db.ref(`user_notifications/${uid}`).limitToLast(1);
+      userNotifRef.on('child_added', (snap) => {
+        const notif = snap.val();
+        if (notif && notif.sentAt && notif.sentAt >= launchTime) {
+          pushToDeviceNotification(notif.title, notif.body);
+        }
+      });
+      activeListeners.push(userNotifRef);
+    }
+
     function initWebPushNotifications() {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js')
           .then((reg) => {
-            console.log('SW Registered successfully:', reg.scope);
+            console.log('SW Registered:', reg.scope);
           })
           .catch((err) => {
             console.error('SW Registration Failed:', err);
           });
       }
 
+      // সাধারণ সিস্টেম ব্রডকাস্ট নোটিফিকেশন লিসেনার
       const launchTime = Date.now();
       const notifRef = db.ref('notifications').limitToLast(1);
       notifRef.on('child_added', (snap) => {
