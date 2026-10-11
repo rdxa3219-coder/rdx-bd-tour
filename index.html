@@ -117,17 +117,6 @@
       transform: scale(0.95);
       background: var(--border);
     }
-    .badge-dot {
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      width: 10px;
-      height: 10px;
-      background: var(--accent-red);
-      border: 2px solid var(--bg-card);
-      border-radius: 50%;
-      animation: pulse 1.8s infinite;
-    }
     .badge-count {
       position: absolute;
       top: -4px;
@@ -217,23 +206,14 @@
       from { opacity: 0; transform: translateX(12px); }
       to { opacity: 1; transform: translateX(0); }
     }
-    @keyframes pulse {
-      0% { transform: scale(0.95); opacity: 0.9; }
-      50% { transform: scale(1.15); opacity: 1; }
-      100% { transform: scale(0.95); opacity: 0.9; }
-    }
     @keyframes bounce {
       0%, 100% { transform: translateY(0); }
       50% { transform: translateY(-3px); }
     }
-    @keyframes shake {
-      0%, 100% { transform: translateX(0); }
-      20%, 60% { transform: translateX(-6px); }
-      40%, 80% { transform: translateX(6px); }
-    }
-    @keyframes shimmer {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.9; }
+      50% { transform: scale(1.15); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.9; }
     }
     @keyframes spin {
       100% { transform: rotate(360deg); }
@@ -267,9 +247,6 @@
       background: linear-gradient(135deg, var(--primary), var(--primary-light));
       color: #FFF;
       box-shadow: 0 4px 14px rgba(21,101,192,0.28);
-    }
-    .btn-primary:hover {
-      filter: brightness(1.05);
     }
     .btn-secondary {
       background: var(--primary-pale);
@@ -597,10 +574,6 @@
       background: var(--primary-pale);
       padding: 6px 10px;
       border-radius: 8px;
-    }
-    .timer-badge.urgent {
-      color: var(--accent-red);
-      background: #FFEBEE;
     }
     .subpage {
       position: fixed;
@@ -1169,6 +1142,7 @@
     </nav>
   </div>
 
+  <!-- Wallet Subpages -->
   <div id="subWallet" class="subpage">
     <div class="subpage-header">
       <button class="icon-btn" onclick="closeSubpage('subWallet')"><i data-lucide="arrow-left"></i></button>
@@ -1395,6 +1369,7 @@
     <div class="subpage-body" id="resultDetailContent"></div>
   </div>
 
+  <!-- Sheets -->
   <div class="bottom-sheet-backdrop" id="sheetJoinMatch" onclick="handleSheetBackdropClick(event, 'sheetJoinMatch')">
     <div class="bottom-sheet">
       <div class="sheet-handle"></div>
@@ -1454,7 +1429,7 @@
       <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">Authorized administrators only. Please authenticate.</p>
       <div class="form-group">
         <label class="form-label">Admin Email</label>
-        <input type="email" id="secretAdminEmail" class="form-control" placeholder="admin@bdtour.com">
+        <input type="email" id="secretAdminEmail" class="form-control" placeholder="jubayedxt@gmail.com" value="jubayedxt@gmail.com">
       </div>
       <div class="form-group">
         <label class="form-label">Admin Password</label>
@@ -1476,16 +1451,16 @@
   </div>
 
   <script>
-	const firebaseConfig = {
-  	   apiKey: "AIzaSyCU5sOxrPB4uv0IzUhOKL4h5_4HmtmVPYg",
-  		authDomain: "rdx-bd-tour.firebaseapp.com",
-	    databaseURL: "https://rdx-bd-tour-default-rtdb.asia-southeast1.firebasedatabase.app",
-  		projectId: "rdx-bd-tour",
-		storageBucket: "rdx-bd-tour.firebasestorage.app",
-		messagingSenderId: "421778019485",
-		appId: "1:421778019485:web:dad0e0d5e5c2e7fa573074",
-		measurementId: "G-R6TSEM5FLR"
-	};
+    const firebaseConfig = {
+      apiKey: "AIzaSyCU5sOxrPB4uv0IzUhOKL4h5_4HmtmVPYg",
+      authDomain: "rdx-bd-tour.firebaseapp.com",
+      databaseURL: "https://rdx-bd-tour-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "rdx-bd-tour",
+      storageBucket: "rdx-bd-tour.firebasestorage.app",
+      messagingSenderId: "421778019485",
+      appId: "1:421778019485:web:dad0e0d5e5c2e7fa573074",
+      measurementId: "G-R6TSEM5FLR"
+    };
 
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
@@ -1610,8 +1585,6 @@
         const userRef = db.ref(`users/${currentUser.uid}`);
         userRef.on('value', (snap) => {
           const data = snap.val();
-          
-          // ফায়ারবেস থেকে ইউজার ডাটা ডিলিট হলে সাথে সাথে লগআউট করা হবে
           if (!data) {
             auth.signOut();
             showToast('Account not found. Please log in again.', 'error');
@@ -2237,8 +2210,6 @@
         }
 
         const uid = currentUser.uid;
-
-        // ইউজারের ডাটাবেস রেকর্ড আছে কি না নিশ্চিত করা
         const userSnap = await db.ref(`users/${uid}`).once('value');
         const uData = userSnap.val();
 
@@ -2569,15 +2540,13 @@
       const pass = document.getElementById('secretAdminPass').value;
 
       try {
-        const snap = await db.ref('admin_credentials').once('value');
-        const adminCreds = snap.val() || {};
-
-        if (adminCreds.email === email && adminCreds.password === pass) {
-          sessionStorage.setItem('admin_auth_token', 'secret_granted');
-          window.location.href = 'admin.html';
-        } else {
-          showToast('Invalid administrator credentials.', 'error');
+        if (email.toLowerCase() !== 'jubayedxt@gmail.com') {
+          throw new Error('Access Denied: Only jubayedxt@gmail.com is authorized.');
         }
+
+        await auth.signInWithEmailAndPassword(email, pass);
+        sessionStorage.setItem('admin_auth_token', 'active_session');
+        window.location.href = 'admin.html';
       } catch (err) {
         showToast('Verification failed: ' + err.message, 'error');
       }
