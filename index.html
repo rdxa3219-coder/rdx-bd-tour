@@ -1609,7 +1609,16 @@
       if (currentUser) {
         const userRef = db.ref(`users/${currentUser.uid}`);
         userRef.on('value', (snap) => {
-          currentUserData = snap.val() || {};
+          const data = snap.val();
+          
+          // ফায়ারবেস থেকে ইউজার ডাটা ডিলিট হলে সাথে সাথে লগআউট করা হবে
+          if (!data) {
+            auth.signOut();
+            showToast('Account not found. Please log in again.', 'error');
+            return;
+          }
+
+          currentUserData = data;
           if (currentUserData.banned) {
             auth.signOut();
             showToast('Your account has been suspended.', 'error');
@@ -2221,12 +2230,25 @@
       btn.innerText = 'Submitting Request...';
 
       try {
-        const uid = currentUser ? currentUser.uid : 'GUEST';
+        if (!currentUser) {
+          showToast('অনুগ্রহ করে লগইন করুন।', 'error');
+          auth.signOut();
+          return;
+        }
 
+        const uid = currentUser.uid;
+
+        // ইউজারের ডাটাবেস রেকর্ড আছে কি না নিশ্চিত করা
         const userSnap = await db.ref(`users/${uid}`).once('value');
-        const uData = userSnap.val() || {};
+        const uData = userSnap.val();
 
-        const uPhone = uData.phone || uData.phoneNumber || (currentUser && currentUser.phoneNumber) || 'N/A';
+        if (!uData) {
+          showToast('ইউজার প্রোফাইল পাওয়া যায়নি! অনুগ্রহ করে পুনরায় লগইন করুন।', 'error');
+          auth.signOut();
+          return;
+        }
+
+        const uPhone = uData.phone || uData.phoneNumber || 'N/A';
         const uName = uData.username || uData.name || 'Player';
 
         await db.ref(`Auto_Pay/${trxId}`).set({
