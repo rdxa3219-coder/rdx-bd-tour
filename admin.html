@@ -1328,9 +1328,10 @@
       const totalUsers = Object.keys(dataUsers).length;
       document.getElementById('dashTotalUsers').textContent = totalUsers;
 
+      // সরাসরি ইউজারদের টোটাল ডিপোজিট থেকে যোগ করা হবে, হিস্ট্রি ডিলিট করলেও এটি কমবে না
       let totalDepositedAmt = 0;
-      Object.values(dataAutoPay).forEach(p => {
-        if (p.status === 'completed' || p.usedBy) totalDepositedAmt += Number(p.amount) || 0;
+      Object.values(dataUsers).forEach(u => {
+        totalDepositedAmt += (Number(u.totalDeposited) || Number(u.deposit) || 0);
       });
       document.getElementById('dashTotalDeposits').textContent = '৳' + totalDepositedAmt;
 
@@ -1997,7 +1998,7 @@
       }
     }
 
-    // আপডেট করা ডিপোজিট টেবিল: রিকোয়েস্ট Approve ও Reject এর পূর্ণাঙ্গ সুযোগ সহ
+    // আপডেট করা ডিপোজিট টেবিল
     function renderDepositsTable() {
       const tbody = document.getElementById('depositsTableBody');
       const q = (document.getElementById('depositSearchInput').value || '').toLowerCase();
@@ -2046,7 +2047,7 @@
       }).join('');
     }
 
-    // ডিপোজিট Approve করা এবং ইউজারের একাউন্টে ব্যালেন্স যুক্ত করা
+    // ডিপোজিট Approve করা
     async function approveDeposit(txid) {
       const deposit = dataAutoPay[txid];
       if (!deposit) return;
@@ -2057,7 +2058,7 @@
         const uid = deposit.userUid;
         const amt = Number(deposit.amount);
 
-        // ইউজারের ব্যালেন্স বাড়ানো
+        // ১. ইউজারের ব্যালেন্স বাড়ানো
         const userSnap = await db.ref(`users/${uid}`).once('value');
         const userData = userSnap.val() || {};
         const newDep = (Number(userData.deposit) || 0) + amt;
@@ -2068,14 +2069,14 @@
           totalDeposited: newTotalDep
         });
 
-        // Auto_Pay নোডে স্ট্যাটাস কমপ্লিট করা
+        // ২. Auto_Pay নোডে স্ট্যাটাস কমপ্লিট করা
         await db.ref(`Auto_Pay/${txid}`).update({
           status: 'completed',
           usedBy: uid,
           processedAt: firebase.database.ServerValue.TIMESTAMP
         });
 
-        // ট্রানজেকশনে স্ট্যাটাস সাকসেস করা
+        // ৩. ট্রানজেকশনে স্ট্যাটাস সাকসেস করা
         await db.ref(`transactions/${uid}/${txid}`).update({
           status: 'completed',
           processedAt: firebase.database.ServerValue.TIMESTAMP
@@ -2136,10 +2137,15 @@
       }
     }
 
+    // সুরক্ষিত ট্রানজেকশন ডিলিট ফাংশন (মুছলে ইউজারের ব্যালেন্সে কোনো প্রভাব পড়বে না)
     async function deleteTrxId(txid) {
-      if (!confirm(`Delete ${txid}?`)) return;
-      await db.ref(`Auto_Pay/${txid}`).remove();
-      showToast('TrxID removed.', 'default');
+      if (!confirm(`আপনি কি নিশ্চিত ${txid} ট্রানজেকশন রেকর্ডটি মুছে ফেলতে চান? (মনে রাখবেন: ইউজারের যুক্ত হওয়া ব্যালেন্স অক্ষত থাকবে)`)) return;
+      try {
+        await db.ref(`Auto_Pay/${txid}`).remove();
+        showToast('TrxID রেকর্ডটি মুছে ফেলা হয়েছে। ইউজারের ব্যালেন্স অক্ষত রয়েছে।', 'default');
+      } catch (err) {
+        showToast('মুছতে ব্যর্থ হয়েছে: ' + err.message, 'error');
+      }
     }
 
     async function handleSendNotification(e) {
@@ -2202,7 +2208,7 @@
 
     function updateAppStats() {
       let rev = 0;
-      Object.values(dataAutoPay).forEach(p => { if (p.status === 'completed' || p.usedBy) rev += Number(p.amount) || 0; });
+      Object.values(dataUsers).forEach(u => { rev += (Number(u.totalDeposited) || Number(u.deposit) || 0); });
       let payout = 0;
       Object.values(dataWithdrawals).forEach(w => { if (w.status === 'completed') payout += Number(w.amount) || 0; });
       let joins = 0;
