@@ -877,7 +877,6 @@
     </main>
   </div>
 
-  <!-- Modals -->
   <div class="modal-backdrop" id="modalMatch">
     <div class="modal-card">
       <div class="modal-header">
@@ -1187,7 +1186,7 @@
       }, 3000);
     }
 
-    // অথেনটিকেশন নিশ্চিত হওয়ার পরেই ডাটাবেস লোড হবে
+    // অথেনটিকেশন নিশ্চিত হওয়ার পর UI স্টেট সিঙ্ক
     auth.onAuthStateChanged((user) => {
       const sessionToken = sessionStorage.getItem('admin_auth_token');
       if (user && (sessionToken === 'active_session' || sessionToken === 'secret_granted')) {
@@ -1201,6 +1200,7 @@
       document.getElementById('adminLoginGate').style.display = 'flex';
     });
 
+    // তাৎক্ষণিকভাবে ড্যাশবোর্ডে প্রবেশের লজিক
     async function handleAdminLogin(e) {
       e.preventDefault();
       const email = document.getElementById('adminEmail').value.trim();
@@ -1217,9 +1217,15 @@
           throw new Error('Access Denied: Only jubayedxt@gmail.com is authorized as Administrator.');
         }
 
-        // Firebase Auth দিয়ে সরাসরি সাইন-ইন
-        await auth.signInWithEmailAndPassword(email, pass);
+        // Firebase Auth সাইন-ইন
+        const userCred = await auth.signInWithEmailAndPassword(email, pass);
         sessionStorage.setItem('admin_auth_token', 'active_session');
+
+        // রিফ্রেশ ছাড়া সাথে সাথে ড্যাশবোর্ডে নিয়ে যাওয়া
+        document.getElementById('adminLoginGate').style.display = 'none';
+        document.getElementById('adminUserBadge').innerText = userCred.user.email;
+        loadAllData();
+
         showToast('Admin authorized successfully!', 'success');
       } catch (err) {
         const box = document.getElementById('loginBox');
