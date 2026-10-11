@@ -215,6 +215,15 @@
       50% { transform: scale(1.15); opacity: 1; }
       100% { transform: scale(0.95); opacity: 0.9; }
     }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
     @keyframes spin {
       100% { transform: rotate(360deg); }
     }
@@ -247,6 +256,9 @@
       background: linear-gradient(135deg, var(--primary), var(--primary-light));
       color: #FFF;
       box-shadow: 0 4px 14px rgba(21,101,192,0.28);
+    }
+    .btn-primary:hover {
+      filter: brightness(1.05);
     }
     .btn-secondary {
       background: var(--primary-pale);
@@ -1142,7 +1154,6 @@
     </nav>
   </div>
 
-  <!-- Wallet Subpages -->
   <div id="subWallet" class="subpage">
     <div class="subpage-header">
       <button class="icon-btn" onclick="closeSubpage('subWallet')"><i data-lucide="arrow-left"></i></button>
@@ -1369,7 +1380,6 @@
     <div class="subpage-body" id="resultDetailContent"></div>
   </div>
 
-  <!-- Sheets -->
   <div class="bottom-sheet-backdrop" id="sheetJoinMatch" onclick="handleSheetBackdropClick(event, 'sheetJoinMatch')">
     <div class="bottom-sheet">
       <div class="sheet-handle"></div>
@@ -1533,10 +1543,37 @@
       requestAnimationFrame(step);
     }
 
+    // ১. সিঙ্গেল ডিভাইস সেশন তৈরি ও সংরক্ষণ
+    async function registerDeviceSession(uid) {
+      const newSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem('my_device_session_id', newSessionId);
+      await db.ref(`users/${uid}/currentSessionId`).set(newSessionId);
+    }
+
+    // ২. সিঙ্গেল ডিভাইস সেশন লিসেনার (অন্য ফোনে ঢুকলে আগের ফোন অটো সাইনআউট)
+    function listenForSingleDeviceSession(uid) {
+      const sessionRef = db.ref(`users/${uid}/currentSessionId`);
+      sessionRef.on('value', (snapshot) => {
+        const serverSessionId = snapshot.val();
+        const localSessionId = localStorage.getItem('my_device_session_id');
+
+        if (serverSessionId && localSessionId && serverSessionId !== localSessionId) {
+          sessionRef.off();
+          auth.signOut();
+          alert('আপনার অ্যাকাউন্টটি অন্য একটি ফোনে লগইন করা হয়েছে! আপনাকে সাইন-আউট করা হলো।');
+          window.location.reload();
+        }
+      });
+      activeListeners.push(sessionRef);
+    }
+
     auth.onAuthStateChanged((user) => {
       if (user) {
         currentUser = user;
         document.getElementById('authScreen').style.display = 'none';
+        
+        // সেশন লিসেনার সংযুক্ত
+        listenForSingleDeviceSession(user.uid);
         attachRealtimeListeners();
       } else {
         currentUser = null;
@@ -2357,7 +2394,9 @@
       const pass = document.getElementById('loginPass').value;
 
       try {
-        await auth.signInWithEmailAndPassword(email, pass);
+        const userCred = await auth.signInWithEmailAndPassword(email, pass);
+        // ডিভাইস সেশন ডাটাবেজে রেজিস্টার করা
+        await registerDeviceSession(userCred.user.uid);
         showToast('Logged in successfully!', 'success');
       } catch (err) {
         const box = document.getElementById('authBox');
@@ -2395,6 +2434,8 @@
         }
 
         const refereeBonus = referrerUid ? (Number(appSettings.refer_bonus_referee) || 0) : 0;
+        const newSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        localStorage.setItem('my_device_session_id', newSessionId);
 
         await db.ref(`users/${uid}`).set({
           username: name,
@@ -2408,6 +2449,7 @@
           referralEarned: 0,
           referredBy: referrerUid,
           banned: false,
+          currentSessionId: newSessionId,
           joinedAt: firebase.database.ServerValue.TIMESTAMP
         });
 
@@ -2450,6 +2492,7 @@
 
     function handleLogout() {
       auth.signOut();
+      localStorage.removeItem('my_device_session_id');
       showToast('Logged out.', 'default');
     }
 
@@ -2594,8 +2637,51 @@
       });
     }
 
+    // সার্ভিস ওয়ার্কার রেজিস্টার ও পুশ নোটিফিকেশন লিসেনার
+    function initWebPushNotifications() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').then((reg) => {
+          console.log('SW Registered:', reg.scope);
+        }).catch((err) => {
+          console.error('SW Error:', err);
+        });
+      }
+
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        Notification.requestPermission();
+      }
+
+      let isInitialLoad = true;
+      const notifRef = db.ref('notifications').limitToLast(1);
+      notifRef.on('child_added', (snap) => {
+        if (isInitialLoad) return;
+        const notif = snap.val();
+        if (notif && Notification.permission === 'granted') {
+          if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification(notif.title || 'BD Tour', {
+                body: notif.body || 'নতুন আপডেট!',
+                icon: 'https://cdn-icons-png.flaticon.com/512/3408/3408590.png',
+                vibrate: [200, 100, 200]
+              });
+            });
+          } else {
+            new Notification(notif.title || 'BD Tour', {
+              body: notif.body || 'নতুন আপডেট!',
+              icon: 'https://cdn-icons-png.flaticon.com/512/3408/3408590.png'
+            });
+          }
+        }
+      });
+
+      notifRef.once('value', () => {
+        setTimeout(() => { isInitialLoad = false; }, 1500);
+      });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
+      initWebPushNotifications();
     });
   </script>
 </body>
