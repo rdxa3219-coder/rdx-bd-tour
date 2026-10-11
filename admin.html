@@ -446,7 +446,7 @@
   <div id="securityBanner" class="warning-banner">
     <div style="display: flex; align-items: center; gap: 8px;">
       <i data-lucide="alert-triangle" style="width: 16px;"></i>
-      <span>Security Alert: Logged in using database credentials.</span>
+      <span>Security Alert: Logged in using database fallback credentials.</span>
     </div>
     <button onclick="document.getElementById('securityBanner').style.display = 'none'" style="background: none; border: none; cursor: pointer; color: #E65100;">✕</button>
   </div>
@@ -466,7 +466,7 @@
           <label class="form-label">Password</label>
           <input type="password" id="adminPassword" class="form-control" required placeholder="••••••••">
         </div>
-        <button type="submit" class="btn btn-primary btn-full" style="padding: 12px; margin-top: 10px;">Authorize Access</button>
+        <button type="submit" id="btnAdminSubmit" class="btn btn-primary btn-full" style="padding: 12px; margin-top: 10px;">Authorize Access</button>
       </form>
     </div>
   </div>
@@ -1212,7 +1212,7 @@
 
     function checkAdminAuthSession() {
       const token = sessionStorage.getItem('admin_auth_token');
-      if (token) {
+      if (token === 'active_session') {
         document.getElementById('adminLoginGate').style.display = 'none';
         loadAllData();
       } else {
@@ -1232,29 +1232,44 @@
         return;
       }
 
+      const submitBtn = document.getElementById('btnAdminSubmit');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Verifying Credentials...";
+      }
+
       try {
-        // ১. ডাটাবেজ থেকে আসল অ্যাডমিন ক্রেডেনশিয়ালস রিড করা
+        let authSuccess = false;
+
+        // ধাপ ১: Firebase Auth দিয়ে সাইন-ইন চেষ্টা করা
+        try {
+          const userCred = await auth.signInWithEmailAndPassword(email, pass);
+          if (userCred && userCred.user) {
+            authSuccess = true;
+          }
+        } catch (authErr) {
+          // Auth ব্যর্থ হলে ডাটাবেজের সরাসরি ক্রেডেনশিয়ালস চেক করা হবে
+        }
+
+        // ধাপ ২: ডাটাবেস থেকে admin_credentials নোড যাচাই
         const snap = await db.ref('admin_credentials').once('value');
         const creds = snap.val() || {};
 
         const adminEmail = (creds.email || 'rdxa3219@gmail.com').toLowerCase();
         const adminPass = creds.password;
 
-        // ২. সাধারণ ইউজারদের আইডি ইমেইল দিয়ে লগইন সম্পূর্ণ ব্লক করা
+        // সাধারণ ইউজাররা নিজস্ব আইডি/ইমেইল দিলে অ্যাক্সেস ডিনাইড করা
         if (email.toLowerCase() !== adminEmail) {
+          if (auth.currentUser) await auth.signOut();
           throw new Error('Access Denied: You are not authorized as an administrator.');
         }
 
-        let authSuccess = false;
-
-        // ৩. অ্যাডমিন পাসওয়ার্ড ভ্যালিডেশন
-        try {
-          await auth.signInWithEmailAndPassword(email, pass);
-          authSuccess = true;
-        } catch (authErr) {
+        // পাসওয়ার্ড যাচাই
+        if (!authSuccess) {
           if (pass === adminPass) {
             await auth.signInAnonymously();
             authSuccess = true;
+            document.getElementById('securityBanner').style.display = 'flex';
           }
         }
 
@@ -1274,9 +1289,16 @@
           localStorage.setItem('admin_lockout_until', Date.now() + 15 * 60 * 1000);
         }
         const box = document.getElementById('loginBox');
-        box.style.animation = 'shake 0.4s ease';
-        setTimeout(() => box.style.animation = '', 450);
+        if (box) {
+          box.style.animation = 'shake 0.4s ease';
+          setTimeout(() => box.style.animation = '', 450);
+        }
         showToast(err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerText = "Authorize Access";
+        }
       }
     }
 
