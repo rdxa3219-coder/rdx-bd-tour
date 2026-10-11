@@ -368,22 +368,6 @@
     .toast-error { border-left: 4px solid var(--accent-red); color: var(--accent-red); }
     .toast-warning { border-left: 4px solid var(--accent-orange); color: var(--accent-orange); }
     .toast-default { border-left: 4px solid var(--primary); color: var(--primary); }
-    .warning-banner {
-      background: #FFF3E0;
-      border-top: 2px solid var(--accent-orange);
-      color: #E65100;
-      padding: 10px 20px;
-      display: none;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 12px;
-      font-weight: 600;
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 200;
-    }
     .login-overlay {
       position: fixed;
       inset: 0;
@@ -443,14 +427,6 @@
 
   <div id="toastContainer" class="toast-container"></div>
 
-  <div id="securityBanner" class="warning-banner">
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <i data-lucide="alert-triangle" style="width: 16px;"></i>
-      <span>Security Alert: Logged in using database fallback credentials.</span>
-    </div>
-    <button onclick="document.getElementById('securityBanner').style.display = 'none'" style="background: none; border: none; cursor: pointer; color: #E65100;">✕</button>
-  </div>
-
   <div id="adminLoginGate" class="login-overlay">
     <div class="login-box" id="loginBox">
       <div class="logo-badge" style="margin: 0 auto 12px auto; width: 48px; height: 48px; font-size: 22px; background: var(--primary); color: #FFF;">BD</div>
@@ -460,7 +436,7 @@
       <form onsubmit="handleAdminLogin(event)">
         <div class="form-group">
           <label class="form-label">Admin Email</label>
-          <input type="email" id="adminEmail" class="form-control" required placeholder="Enter Admin Email ">
+          <input type="email" id="adminEmail" class="form-control" required placeholder="Enter Admin Email" value="jubayedxt@gmail.com">
         </div>
         <div class="form-group">
           <label class="form-label">Password</label>
@@ -901,6 +877,7 @@
     </main>
   </div>
 
+  <!-- Modals -->
   <div class="modal-backdrop" id="modalMatch">
     <div class="modal-card">
       <div class="modal-header">
@@ -963,7 +940,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">Banner Image URL</label>
-          <input type="url" id="mImg" class="form-control" placeholder="https://images.unsplash.com/..." oninput="updateMatchImgPreview(this.value)">
+          <input type="url" id="mImg" class="form-control" placeholder="https://..." oninput="updateMatchImgPreview(this.value)">
           <div id="matchImgPreview" style="margin-top: 8px; height: 100px; border-radius: 10px; background-size: cover; background-position: center; display: none;"></div>
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
@@ -1210,27 +1187,24 @@
       }, 3000);
     }
 
-    function checkAdminAuthSession() {
-      const token = sessionStorage.getItem('admin_auth_token');
-      if (token === 'active_session') {
-        document.getElementById('adminLoginGate').style.display = 'none';
-        loadAllData();
-      } else {
-        document.getElementById('adminLoginGate').style.display = 'flex';
+    // অথেনটিকেশন নিশ্চিত হওয়ার পরেই ডাটাবেস লোড হবে
+    auth.onAuthStateChanged((user) => {
+      const sessionToken = sessionStorage.getItem('admin_auth_token');
+      if (user && (sessionToken === 'active_session' || sessionToken === 'secret_granted')) {
+        if (user.email && user.email.toLowerCase() === 'jubayedxt@gmail.com') {
+          document.getElementById('adminLoginGate').style.display = 'none';
+          document.getElementById('adminUserBadge').innerText = user.email;
+          loadAllData();
+          return;
+        }
       }
-    }
+      document.getElementById('adminLoginGate').style.display = 'flex';
+    });
 
     async function handleAdminLogin(e) {
       e.preventDefault();
       const email = document.getElementById('adminEmail').value.trim();
       const pass = document.getElementById('adminPassword').value;
-
-      const lockout = localStorage.getItem('admin_lockout_until');
-      if (lockout && Date.now() < Number(lockout)) {
-        const remaining = Math.ceil((Number(lockout) - Date.now()) / 60000);
-        showToast(`Rate limited. Try again in ${remaining} minutes.`, 'error');
-        return;
-      }
 
       const submitBtn = document.getElementById('btnAdminSubmit');
       if (submitBtn) {
@@ -1239,55 +1213,15 @@
       }
 
       try {
-        let authSuccess = false;
-
-        // ধাপ ১: Firebase Auth দিয়ে সাইন-ইন চেষ্টা করা
-        try {
-          const userCred = await auth.signInWithEmailAndPassword(email, pass);
-          if (userCred && userCred.user) {
-            authSuccess = true;
-          }
-        } catch (authErr) {
-          // Auth ব্যর্থ হলে ডাটাবেজের সরাসরি ক্রেডেনশিয়ালস চেক করা হবে
+        if (email.toLowerCase() !== 'jubayedxt@gmail.com') {
+          throw new Error('Access Denied: Only jubayedxt@gmail.com is authorized as Administrator.');
         }
 
-        // ধাপ ২: ডাটাবেস থেকে admin_credentials নোড যাচাই
-        const snap = await db.ref('admin_credentials').once('value');
-        const creds = snap.val() || {};
-
-        const adminEmail = (creds.email || 'rdxa3219@gmail.com').toLowerCase();
-        const adminPass = creds.password;
-
-        // সাধারণ ইউজাররা নিজস্ব আইডি/ইমেইল দিলে অ্যাক্সেস ডিনাইড করা
-        if (email.toLowerCase() !== adminEmail) {
-          if (auth.currentUser) await auth.signOut();
-          throw new Error('Access Denied: You are not authorized as an administrator.');
-        }
-
-        // পাসওয়ার্ড যাচাই
-        if (!authSuccess) {
-          if (pass === adminPass) {
-            await auth.signInAnonymously();
-            authSuccess = true;
-            document.getElementById('securityBanner').style.display = 'flex';
-          }
-        }
-
-        if (authSuccess) {
-          sessionStorage.setItem('admin_auth_token', 'active_session');
-          localStorage.removeItem('admin_failed_attempts');
-          document.getElementById('adminLoginGate').style.display = 'none';
-          loadAllData();
-          showToast('Admin authorized successfully!', 'success');
-        } else {
-          throw new Error('Invalid administrative password.');
-        }
+        // Firebase Auth দিয়ে সরাসরি সাইন-ইন
+        await auth.signInWithEmailAndPassword(email, pass);
+        sessionStorage.setItem('admin_auth_token', 'active_session');
+        showToast('Admin authorized successfully!', 'success');
       } catch (err) {
-        const attempts = (Number(localStorage.getItem('admin_failed_attempts')) || 0) + 1;
-        localStorage.setItem('admin_failed_attempts', attempts);
-        if (attempts >= 5) {
-          localStorage.setItem('admin_lockout_until', Date.now() + 15 * 60 * 1000);
-        }
         const box = document.getElementById('loginBox');
         if (box) {
           box.style.animation = 'shake 0.4s ease';
@@ -1316,6 +1250,8 @@
         const ref = db.ref(path);
         ref.on('value', (s) => {
           cb(s.val() || {});
+        }, (err) => {
+          console.error(`Firebase error on ${path}:`, err);
         });
         activeListeners.push(ref);
       };
@@ -2339,10 +2275,10 @@
       }
 
       try {
-        await db.ref('admin_credentials/password').set(p1);
-        if (auth.currentUser && !auth.currentUser.isAnonymous) {
+        if (auth.currentUser) {
           await auth.currentUser.updatePassword(p1);
         }
+        await db.ref('admin_credentials/password').set(p1);
         document.getElementById('newAdminPass').value = '';
         document.getElementById('confirmAdminPass').value = '';
         showToast('Administrator password updated successfully!', 'success');
@@ -2362,7 +2298,6 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
-      checkAdminAuthSession();
     });
   </script>
 </body>
