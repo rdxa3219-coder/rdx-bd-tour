@@ -1621,11 +1621,18 @@
       openModal('modalRoom');
     }
 
+    // শুধুমাত্র এই ম্যাচে জয়েন করা প্লেয়ারদের পার্সোনাল নোটিফিকেশন পাঠানো
     async function handleSaveRoom(e) {
       e.preventDefault();
       const matchId = document.getElementById('roomMatchId').value;
       const rId = document.getElementById('roomInputId').value.trim();
       const rPass = document.getElementById('roomInputPass').value.trim();
+
+      const btn = e.target.querySelector('button[type="submit"]');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Broadcasting to Participants...";
+      }
 
       try {
         await db.ref(`matches/${matchId}`).update({
@@ -1637,16 +1644,41 @@
           ? dataMatches[matchId].title 
           : 'ট্যুরনামেন্ট ম্যাচ';
 
-        await db.ref('notifications').push({
+        // ম্যাচে জয়েন করা ইউজারদের বের করা
+        const snap = await db.ref(`match_participants/${matchId}`).once('value');
+        const participants = snap.val() || {};
+        const participantUids = Object.keys(participants);
+
+        if (participantUids.length === 0) {
+          showToast('রুম ক্রেডেনশিয়াল আপডেট হয়েছে (কোনো জয়েন করা প্লেয়ার নেই)', 'warning');
+          closeModal('modalRoom');
+          return;
+        }
+
+        const notifPayload = {
           title: `🔑 রুম আইডি ও পাসওয়ার্ড দেওয়া হয়েছে!`,
           body: `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}। এখনই রুমে প্রবেশ করুন!`,
+          matchId: matchId,
           sentAt: firebase.database.ServerValue.TIMESTAMP
+        };
+
+        const updates = {};
+        participantUids.forEach(uid => {
+          const newKey = db.ref(`user_notifications/${uid}`).push().key;
+          updates[`user_notifications/${uid}/${newKey}`] = notifPayload;
         });
 
+        await db.ref().update(updates);
+
         closeModal('modalRoom');
-        showToast('রুম ক্রেডেনশিয়াল আপডেট ও নোটিফিকেশন পাঠানো হয়েছে!', 'success');
+        showToast(`সফলভাবে ${participantUids.length} জন জয়েন করা প্লেয়ারের কাছে নোটিফিকেশন পাঠানো হয়েছে!`, 'success');
       } catch (err) {
-        showToast(err.message, 'error');
+        showToast('ব্যর্থ হয়েছে: ' + err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = "Broadcast Room Credentials";
+        }
       }
     }
 
