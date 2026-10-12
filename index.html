@@ -1490,6 +1490,7 @@
     let cacheCategories = {};
     let cacheSliders = [];
     let cacheNotifications = [];
+    let cacheUserNotifications = []; // জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন ক্যাশ
     let activeMatchTab = 'Upcoming';
     let currentCategoryFilter = null;
     let secretTapCount = 0;
@@ -1586,7 +1587,7 @@
           await registerDeviceSession(user.uid);
         }
 
-        renderUserProfile(); // ক্যাশ থেকে সরাসরি নাম ও ব্যালেন্স দেখানো
+        renderUserProfile();
         listenForSingleDeviceSession(user.uid);
         attachRealtimeListeners();
         listenToUserSpecificNotifications(user.uid);
@@ -1643,7 +1644,6 @@
           currentUserData = data;
           isUserDataReady = true;
 
-          // ব্যাকগ্রাউন্ড থেকে ফিরে আসলেও যাতে না হারায় তাই লোকাল স্টোরেজে সংরক্ষণ
           localStorage.setItem('cached_user_profile', JSON.stringify(data));
 
           if (currentUserData.banned) {
@@ -1655,13 +1655,23 @@
         });
         activeListeners.push(userRef);
 
+        // ১. সাধারণ গ্লোবাল নোটিফিকেশন
         const notifRef = db.ref('notifications').limitToLast(30);
         notifRef.on('value', (snap) => {
           const val = snap.val() || {};
-          cacheNotifications = Object.keys(val).map(k => ({ id: k, ...val[k] })).reverse();
+          cacheNotifications = Object.keys(val).map(k => ({ id: k, ...val[k] }));
           renderNotifications();
         });
         activeListeners.push(notifRef);
+
+        // ২. জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন লিসেনার
+        const myPersonalNotifRef = db.ref(`user_notifications/${currentUser.uid}`);
+        myPersonalNotifRef.on('value', (snap) => {
+          const val = snap.val() || {};
+          cacheUserNotifications = Object.keys(val).map(k => ({ id: k, ...val[k] }));
+          renderNotifications();
+        });
+        activeListeners.push(myPersonalNotifRef);
 
         const txRef = db.ref(`transactions/${currentUser.uid}`);
         txRef.on('value', (snap) => {
@@ -1828,7 +1838,6 @@
       renderMatches();
     }
 
-    // Ongoing ও Finished ম্যাচে জয়েন বাটন বন্ধ রাখার লজিক
     function renderMatches() {
       const container = document.getElementById('matchesContainer');
       const homeFeatured = document.getElementById('homeMatchesContainer');
@@ -2032,7 +2041,6 @@
       });
     }
 
-    // প্রোফাইল UI আপডেট এবং লোকাল ক্যাশ থেকে পুনরুদ্ধার
     function renderUserProfile() {
       const cached = JSON.parse(localStorage.getItem('cached_user_profile') || '{}');
       const uData = currentUserData || cached;
@@ -2088,25 +2096,34 @@
       openSubpage('subAddMoney');
     }
 
+    // গ্লোবাল এবং জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন একত্র করে তালিকায় দেখানো
     function renderNotifications() {
       const container = document.getElementById('notifListContainer');
       const badge = document.getElementById('headerNotifBadge');
 
-      if (!cacheNotifications.length) {
-        container.innerHTML = `<div class="empty-state"><i data-lucide="bell"></i><p>No notifications yet.</p></div>`;
+      const combinedNotifs = [...cacheNotifications, ...cacheUserNotifications];
+      combinedNotifs.sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0));
+
+      if (!combinedNotifs.length) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i data-lucide="bell"></i>
+            <p>No notifications yet.</p>
+          </div>
+        `;
         badge.style.display = 'none';
         lucide.createIcons();
         return;
       }
 
-      badge.textContent = cacheNotifications.length;
+      badge.textContent = combinedNotifs.length;
       badge.style.display = 'flex';
 
-      container.innerHTML = cacheNotifications.map(n => `
-        <div class="card" style="background: var(--bg-card); border-left: 4px solid var(--primary); margin-bottom: 10px;">
+      container.innerHTML = combinedNotifs.map(n => `
+        <div class="card" style="background: var(--bg-card); border-left: 4px solid ${n.matchId ? 'var(--accent-green)' : 'var(--primary)'}; margin-bottom: 10px;">
           <h4 style="font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(n.title)}</h4>
           <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 6px;">${escapeHtml(n.body)}</p>
-          <span style="font-size: 11px; color: var(--text-muted);">${n.sentAt ? new Date(n.sentAt).toLocaleDateString() : ''}</span>
+          <span style="font-size: 11px; color: var(--text-muted);">${n.sentAt ? new Date(n.sentAt).toLocaleString() : ''}</span>
         </div>
       `).join('');
       lucide.createIcons();
