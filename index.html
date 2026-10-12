@@ -273,6 +273,10 @@
       background: linear-gradient(135deg, var(--accent-red), #E57373);
       color: #FFF;
     }
+    .btn-warning {
+      background: linear-gradient(135deg, var(--accent-orange), #FFA726);
+      color: #FFF;
+    }
     .btn-full {
       width: 100%;
     }
@@ -1058,7 +1062,7 @@
             </div>
             <div style="flex: 1;">
               <h3 id="profileName" style="font-size: 20px; font-weight: 700; margin-bottom: 2px;">Player</h3>
-              <p id="profilePhone" style="font-size: 13px; opacity: 0.9;">017XXXXXXXX</p>
+              <p id="profilePhone" style="font-size: 13px; opacity: 0.9;">01XXXXXXXXX</p>
             </div>
             <button class="icon-btn" onclick="openSubpage('subEditProfile')" style="background: rgba(255,255,255,0.25); border: none; color: #FFF;">
               <i data-lucide="edit-3" style="width: 18px; height: 18px;"></i>
@@ -1837,8 +1841,11 @@
 
         const isJoined = currentUser && m.participants && m.participants[currentUser.uid];
         const isFull = joinedCount >= totalSlots;
+        const isOngoing = m.status === 'Ongoing';
+        const isFinished = m.status === 'Finished';
 
         let actionBtn = `<button class="btn btn-primary" onclick="openJoinSheet('${m.id}')">Join ৳${m.entry_fee}</button>`;
+        
         if (isJoined) {
           actionBtn = `
             <div style="display:flex; gap:6px;">
@@ -1846,6 +1853,10 @@
               <button class="btn btn-success" disabled>Joined</button>
             </div>
           `;
+        } else if (isOngoing) {
+          actionBtn = `<button class="btn btn-warning" disabled style="opacity: 0.7; cursor: not-allowed;">Ongoing</button>`;
+        } else if (isFinished) {
+          actionBtn = `<button class="btn btn-secondary" disabled style="opacity: 0.7; cursor: not-allowed;">Closed</button>`;
         } else if (isFull) {
           actionBtn = `<button class="btn btn-danger" disabled>Full</button>`;
         }
@@ -2116,10 +2127,20 @@
       const match = cacheMatches[matchId];
       if (!match) return;
 
+      if (match.status === 'Ongoing' || match.status === 'Finished') {
+        showToast('এই ম্যাচটি ইতিমধ্যে শুরু হয়ে গেছে, আর জয়েন করা যাবে না।', 'warning');
+        return;
+      }
+
+      if (!currentUserData) {
+        showToast('আপনার একাউন্ট তথ্য লোড হচ্ছে, কিছুক্ষণ অপেক্ষা করুন...', 'warning');
+        return;
+      }
+
       joiningMatchId = matchId;
       document.getElementById('joinSheetMatchTitle').textContent = match.title;
       document.getElementById('joinSheetFee').textContent = match.entry_fee || 0;
-      const userTotal = (currentUserData.deposit || 0) + (currentUserData.winning || 0);
+      const userTotal = (Number(currentUserData.deposit) || 0) + (Number(currentUserData.winning) || 0);
       document.getElementById('joinSheetUserBal').textContent = userTotal;
       document.getElementById('joinSheetIGN').value = '';
 
@@ -2134,6 +2155,12 @@
       }
 
       const match = cacheMatches[joiningMatchId];
+      if (!match || match.status === 'Ongoing' || match.status === 'Finished') {
+        showToast('এই ম্যাচটিতে আর জয়েন করা সম্ভব নয়।', 'error');
+        closeSheet('sheetJoinMatch');
+        return;
+      }
+
       const fee = Number(match.entry_fee) || 0;
       let depBal = Number(currentUserData.deposit) || 0;
       let winBal = Number(currentUserData.winning) || 0;
@@ -2227,17 +2254,23 @@
 
     async function handleVerifyDeposit(e) {
       e.preventDefault();
+
+      if (!currentUser || !currentUserData) {
+        showToast('প্রোফাইল তথ্য লোড হচ্ছে, অনুগ্রহ করে কয়েক সেকেন্ড পর আবার চেষ্টা করুন।', 'warning');
+        return;
+      }
+
       const amt = Number(document.getElementById('depAmount').value);
       const trxId = document.getElementById('depTrxId').value.trim().toUpperCase();
 
       if (!trxId || amt <= 0) {
-        showToast('Please enter a valid amount and TrxID', 'warning');
+        showToast('সঠিক পরিমাণ এবং TrxID লিখুন।', 'warning');
         return;
       }
 
       const minD = Number(appSettings.min_deposit) || 10;
       if (amt < minD) {
-        showToast(`Minimum deposit is ৳${minD}`, 'warning');
+        showToast(`সর্বনিম্ন ডিপোজিট ৳${minD}`, 'warning');
         return;
       }
 
@@ -2246,24 +2279,9 @@
       btn.innerText = 'Submitting Request...';
 
       try {
-        if (!currentUser) {
-          showToast('অনুগ্রহ করে লগইন করুন।', 'error');
-          auth.signOut();
-          return;
-        }
-
         const uid = currentUser.uid;
-        const userSnap = await db.ref(`users/${uid}`).once('value');
-        const uData = userSnap.val();
-
-        if (!uData) {
-          showToast('ইউজার প্রোফাইল পাওয়া যায়নি! অনুগ্রহ করে পুনরায় লগইন করুন।', 'error');
-          auth.signOut();
-          return;
-        }
-
-        const uPhone = uData.phone || uData.phoneNumber || 'N/A';
-        const uName = uData.username || uData.name || 'Player';
+        const uPhone = currentUserData.phone || currentUserData.phoneNumber || 'N/A';
+        const uName = currentUserData.username || currentUserData.name || 'Player';
 
         await db.ref(`Auto_Pay/${trxId}`).set({
           amount: amt,
@@ -2407,7 +2425,6 @@
 
       try {
         const userCred = await auth.signInWithEmailAndPassword(email, pass);
-        // নিশ্চিতভাবে আগে নতুন সেশন রেজিস্টার হবে
         await registerDeviceSession(userCred.user.uid);
         showToast('Logged in successfully!', 'success');
       } catch (err) {
@@ -2693,7 +2710,6 @@
       }
     }
 
-    // শুধুমাত্র এই ইউজারের জয়েন করা ম্যাচের নোটিফিকেশন লিসেনার
     function listenToUserSpecificNotifications(uid) {
       const launchTime = Date.now();
       const userNotifRef = db.ref(`user_notifications/${uid}`).limitToLast(1);
@@ -2717,7 +2733,6 @@
           });
       }
 
-      // সাধারণ সিস্টেম ব্রডকাস্ট নোটিফিকেশন লিসেনার
       const launchTime = Date.now();
       const notifRef = db.ref('notifications').limitToLast(1);
       notifRef.on('child_added', (snap) => {
