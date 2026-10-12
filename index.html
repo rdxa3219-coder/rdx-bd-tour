@@ -11,6 +11,22 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+  
+  <!-- OneSignal Web Push SDK -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "453902a1-bb12-4edb-8f7d-20f6b0e0bb3c",
+        notifyButton: {
+          enable: false,
+        },
+        allowLocalhostAsSecureOrigin: true,
+      });
+    });
+  </script>
+
   <style>
     :root {
       --bg-body: #F5F8FF;
@@ -1490,7 +1506,7 @@
     let cacheCategories = {};
     let cacheSliders = [];
     let cacheNotifications = [];
-    let cacheUserNotifications = []; // জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন ক্যাশ
+    let cacheUserNotifications = [];
     let activeMatchTab = 'Upcoming';
     let currentCategoryFilter = null;
     let secretTapCount = 0;
@@ -1583,6 +1599,12 @@
         currentUser = user;
         document.getElementById('authScreen').style.display = 'none';
 
+        // OneSignal-এ ইউজারের UID সেট করা
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          await OneSignal.login(user.uid);
+        });
+
         if (!localStorage.getItem('my_device_session_id')) {
           await registerDeviceSession(user.uid);
         }
@@ -1590,11 +1612,16 @@
         renderUserProfile();
         listenForSingleDeviceSession(user.uid);
         attachRealtimeListeners();
-        listenToUserSpecificNotifications(user.uid);
       } else {
         currentUser = null;
         currentUserData = null;
         isUserDataReady = false;
+
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          await OneSignal.logout();
+        });
+
         detachRealtimeListeners();
         document.getElementById('authScreen').style.display = 'flex';
       }
@@ -1655,7 +1682,7 @@
         });
         activeListeners.push(userRef);
 
-        // ১. সাধারণ গ্লোবাল নোটিফিকেশন
+        // গ্লোবাল নোটিফিকেশন লিসেনার
         const notifRef = db.ref('notifications').limitToLast(30);
         notifRef.on('value', (snap) => {
           const val = snap.val() || {};
@@ -1664,7 +1691,7 @@
         });
         activeListeners.push(notifRef);
 
-        // ২. জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন লিসেনার
+        // জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন লিসেনার
         const myPersonalNotifRef = db.ref(`user_notifications/${currentUser.uid}`);
         myPersonalNotifRef.on('value', (snap) => {
           const val = snap.val() || {};
@@ -2096,7 +2123,6 @@
       openSubpage('subAddMoney');
     }
 
-    // গ্লোবাল এবং জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন একত্র করে তালিকায় দেখানো
     function renderNotifications() {
       const container = document.getElementById('notifListContainer');
       const badge = document.getElementById('headerNotifBadge');
@@ -2739,73 +2765,14 @@
         Notification.requestPermission().then((perm) => {
           if (perm === 'granted') {
             showToast('নোটিফিকেশন সক্রিয় করা হয়েছে!', 'success');
-            pushToDeviceNotification('BD Tour', 'নোটিফিকেশন সফলভাবে চালু হয়েছে!');
           }
         });
       }
       openSubpage('subNotifications');
     }
 
-    function pushToDeviceNotification(title, body) {
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
-
-      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'SHOW_NOTIFICATION',
-          payload: { title, body }
-        });
-      } else if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-        navigator.serviceWorker.ready.then((reg) => {
-          reg.showNotification(title, {
-            body: body,
-            icon: 'https://cdn-icons-png.flaticon.com/512/3408/3408590.png',
-            vibrate: [300, 100, 300]
-          });
-        });
-      } else {
-        new Notification(title, {
-          body: body,
-          icon: 'https://cdn-icons-png.flaticon.com/512/3408/3408590.png'
-        });
-      }
-    }
-
-    function listenToUserSpecificNotifications(uid) {
-      const launchTime = Date.now();
-      const userNotifRef = db.ref(`user_notifications/${uid}`).limitToLast(1);
-      userNotifRef.on('child_added', (snap) => {
-        const notif = snap.val();
-        if (notif && notif.sentAt && notif.sentAt >= launchTime) {
-          pushToDeviceNotification(notif.title, notif.body);
-        }
-      });
-      activeListeners.push(userNotifRef);
-    }
-
-    function initWebPushNotifications() {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js')
-          .then((reg) => {
-            console.log('SW Registered successfully:', reg.scope);
-          })
-          .catch((err) => {
-            console.error('SW Registration Failed:', err);
-          });
-      }
-
-      const launchTime = Date.now();
-      const notifRef = db.ref('notifications').limitToLast(1);
-      notifRef.on('child_added', (snap) => {
-        const notif = snap.val();
-        if (notif && notif.sentAt && notif.sentAt >= launchTime) {
-          pushToDeviceNotification(notif.title || 'BD Tour Update', notif.body || 'নতুন নোটিফিকেশন এসেছে!');
-        }
-      });
-    }
-
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
-      initWebPushNotifications();
     });
   </script>
 </body>
