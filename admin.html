@@ -1533,14 +1533,35 @@
       }
     }
 
+    // ম্যাচ ডিলিট করার সাথে সাথে প্লেয়ারদের পার্সোনাল নোটিফিকেশন থেকে রুম আইডি মুছে ফেলা
     async function deleteMatch(matchId) {
-      if (!confirm('Are you sure you want to permanently delete this match?')) return;
+      if (!confirm('আপনি কি নিশ্চিত এই ম্যাচটি মুছে ফেলতে চান? এটি মুছে দিলে প্লেয়ারদের নোটিফিকেশন হিস্টোরি থেকেও রুম আইডি রিমুভ হয়ে যাবে।')) return;
+      
       try {
+        // ১. ম্যাচটিতে জয়েন করা সব ইউজারের তালিকা নেওয়া
+        const snap = await db.ref(`match_participants/${matchId}`).once('value');
+        const participants = snap.val() || {};
+        const participantUids = Object.keys(participants);
+
+        // ২. প্রতিটি জয়েন করা প্লেয়ারের নোটিফিকেশন থেকে এই ম্যাচের নোটিফিকেশনগুলো মুছে ফেলা
+        for (const uid of participantUids) {
+          const userNotifsSnap = await db.ref(`user_notifications/${uid}`).once('value');
+          const userNotifs = userNotifsSnap.val() || {};
+          
+          for (const notifKey of Object.keys(userNotifs)) {
+            if (userNotifs[notifKey].matchId === matchId) {
+              await db.ref(`user_notifications/${uid}/${notifKey}`).remove();
+            }
+          }
+        }
+
+        // ৩. ম্যাচের মূল ডাটা ও পার্টিসিপেন্ট নোড রিমুভ করা
         await db.ref(`matches/${matchId}`).remove();
         await db.ref(`match_participants/${matchId}`).remove();
-        showToast('Match deleted.', 'default');
+
+        showToast('ম্যাচ এবং সম্পর্কিত সকল নোটিফিকেশন সফলভাবে মুছে ফেলা হয়েছে।', 'default');
       } catch (err) {
-        showToast(err.message, 'error');
+        showToast('মুছতে ব্যর্থ হয়েছে: ' + err.message, 'error');
       }
     }
 
@@ -1605,6 +1626,15 @@
           status: 'completed',
           date: firebase.database.ServerValue.TIMESTAMP
         });
+
+        // কিক করা ইউজারের ব্যক্তিগত নোটিফিকেশন তালিকা থেকে রুম আইডি মুছে ফেলা
+        const userNotifsSnap = await db.ref(`user_notifications/${uid}`).once('value');
+        const userNotifs = userNotifsSnap.val() || {};
+        for (const notifKey of Object.keys(userNotifs)) {
+          if (userNotifs[notifKey].matchId === matchId) {
+            await db.ref(`user_notifications/${uid}/${notifKey}`).remove();
+          }
+        }
 
         showToast('Participant removed and entry fee refunded.', 'success');
         viewParticipants(matchId);
