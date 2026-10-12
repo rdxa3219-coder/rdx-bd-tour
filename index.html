@@ -1493,6 +1493,7 @@
     let sliderTimer = null;
     let currentSlideIndex = 0;
     let activeListeners = [];
+    let currentActiveSessionId = null;
 
     function escapeHtml(str) {
       if (!str) return '';
@@ -1543,21 +1544,27 @@
       requestAnimationFrame(step);
     }
 
+    // ১. নিরাপদ ডিভাইস সেশন তৈরি
     async function registerDeviceSession(uid) {
       const newSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+      currentActiveSessionId = newSessionId;
       localStorage.setItem('my_device_session_id', newSessionId);
       await db.ref(`users/${uid}/currentSessionId`).set(newSessionId);
+      return newSessionId;
     }
 
+    // ২. সিঙ্গেল ডিভাইস সেশন লিসেনার
     function listenForSingleDeviceSession(uid) {
       const sessionRef = db.ref(`users/${uid}/currentSessionId`);
       sessionRef.on('value', (snapshot) => {
         const serverSessionId = snapshot.val();
-        const localSessionId = localStorage.getItem('my_device_session_id');
+        const localSessionId = localStorage.getItem('my_device_session_id') || currentActiveSessionId;
 
         if (serverSessionId && localSessionId && serverSessionId !== localSessionId) {
           sessionRef.off();
           auth.signOut();
+          localStorage.removeItem('my_device_session_id');
+          currentActiveSessionId = null;
           alert('আপনার অ্যাকাউন্টটি অন্য একটি ফোনে লগইন করা হয়েছে! আপনাকে সাইন-আউট করা হলো।');
           window.location.reload();
         }
@@ -1565,10 +1572,16 @@
       activeListeners.push(sessionRef);
     }
 
-    auth.onAuthStateChanged((user) => {
+    // ৩. মূল Auth হ্যান্ডলার (লগইন বাউন্স রোধের নিরাপদ লজিক)
+    auth.onAuthStateChanged(async (user) => {
       if (user) {
         currentUser = user;
         document.getElementById('authScreen').style.display = 'none';
+
+        if (!localStorage.getItem('my_device_session_id')) {
+          await registerDeviceSession(user.uid);
+        }
+
         listenForSingleDeviceSession(user.uid);
         attachRealtimeListeners();
         listenToUserSpecificNotifications(user.uid);
@@ -1619,11 +1632,7 @@
         const userRef = db.ref(`users/${currentUser.uid}`);
         userRef.on('value', (snap) => {
           const data = snap.val();
-          if (!data) {
-            auth.signOut();
-            showToast('Account not found. Please log in again.', 'error');
-            return;
-          }
+          if (!data) return; // ডাটা লোড না হওয়া পর্যন্ত সাইনআউট করবে না
 
           currentUserData = data;
           if (currentUserData.banned) {
@@ -2390,15 +2399,29 @@
       const email = document.getElementById('loginEmail').value.trim();
       const pass = document.getElementById('loginPass').value;
 
+      const btn = document.getElementById('btnLoginSubmit');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Logging in...';
+      }
+
       try {
         const userCred = await auth.signInWithEmailAndPassword(email, pass);
+        // নিশ্চিতভাবে আগে নতুন সেশন রেজিস্টার হবে
         await registerDeviceSession(userCred.user.uid);
         showToast('Logged in successfully!', 'success');
       } catch (err) {
         const box = document.getElementById('authBox');
-        box.style.animation = 'shake 0.4s ease';
-        setTimeout(() => box.style.animation = '', 450);
+        if (box) {
+          box.style.animation = 'shake 0.4s ease';
+          setTimeout(() => box.style.animation = '', 450);
+        }
         showToast(err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = 'Login to Account';
+        }
       }
     }
 
@@ -2489,6 +2512,7 @@
     function handleLogout() {
       auth.signOut();
       localStorage.removeItem('my_device_session_id');
+      currentActiveSessionId = null;
       showToast('Logged out.', 'default');
     }
 
@@ -2686,7 +2710,7 @@
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js')
           .then((reg) => {
-            console.log('SW Registered:', reg.scope);
+            console.log('SW Registered successfully:', reg.scope);
           })
           .catch((err) => {
             console.error('SW Registration Failed:', err);
