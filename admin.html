@@ -1533,33 +1533,34 @@
       }
     }
 
-    // ম্যাচ ডিলিট করার সাথে সাথে প্লেয়ারদের পার্সোনাল নোটিফিকেশন থেকে রুম আইডি মুছে ফেলা
+    // ম্যাচ মুছে ফেলার সাথে সাথে প্লেয়ারদের পার্সোনাল নোটিফিকেশন থেকে রুম ক্রেডেনশিয়াল ক্লিন করা
     async function deleteMatch(matchId) {
-      if (!confirm('আপনি কি নিশ্চিত এই ম্যাচটি মুছে ফেলতে চান? এটি মুছে দিলে প্লেয়ারদের নোটিফিকেশন হিস্টোরি থেকেও রুম আইডি রিমুভ হয়ে যাবে।')) return;
+      if (!confirm('আপনি কি নিশ্চিত এই ম্যাচটি মুছে ফেলতে চান? এটি মুছে দিলে প্লেয়ারদের নোটিফিকেশন থেকেও রুম আইডি মুছে যাবে।')) return;
       
       try {
-        // ১. ম্যাচটিতে জয়েন করা সব ইউজারের তালিকা নেওয়া
-        const snap = await db.ref(`match_participants/${matchId}`).once('value');
-        const participants = snap.val() || {};
-        const participantUids = Object.keys(participants);
+        try {
+          const snap = await db.ref(`match_participants/${matchId}`).once('value');
+          const participants = snap.val() || {};
+          const participantUids = Object.keys(participants);
 
-        // ২. প্রতিটি জয়েন করা প্লেয়ারের নোটিফিকেশন থেকে এই ম্যাচের নোটিফিকেশনগুলো মুছে ফেলা
-        for (const uid of participantUids) {
-          const userNotifsSnap = await db.ref(`user_notifications/${uid}`).once('value');
-          const userNotifs = userNotifsSnap.val() || {};
-          
-          for (const notifKey of Object.keys(userNotifs)) {
-            if (userNotifs[notifKey].matchId === matchId) {
-              await db.ref(`user_notifications/${uid}/${notifKey}`).remove();
+          for (const uid of participantUids) {
+            const userNotifsSnap = await db.ref(`user_notifications/${uid}`).once('value');
+            const userNotifs = userNotifsSnap.val() || {};
+            
+            for (const notifKey of Object.keys(userNotifs)) {
+              if (userNotifs[notifKey].matchId === matchId) {
+                await db.ref(`user_notifications/${uid}/${notifKey}`).remove();
+              }
             }
           }
+        } catch (notifErr) {
+          console.warn('Notification cleanup warning:', notifErr.message);
         }
 
-        // ৩. ম্যাচের মূল ডাটা ও পার্টিসিপেন্ট নোড রিমুভ করা
         await db.ref(`matches/${matchId}`).remove();
         await db.ref(`match_participants/${matchId}`).remove();
 
-        showToast('ম্যাচ এবং সম্পর্কিত সকল নোটিফিকেশন সফলভাবে মুছে ফেলা হয়েছে।', 'default');
+        showToast('ম্যাচ এবং সম্পর্কিত সকল নোটিফিকেশন সফলভাবে মুছে ফেলা হয়েছে!', 'default');
       } catch (err) {
         showToast('মুছতে ব্যর্থ হয়েছে: ' + err.message, 'error');
       }
@@ -1627,7 +1628,7 @@
           date: firebase.database.ServerValue.TIMESTAMP
         });
 
-        // কিক করা ইউজারের ব্যক্তিগত নোটিফিকেশন তালিকা থেকে রুম আইডি মুছে ফেলা
+        // কিক করা ইউজারের ব্যক্তিগত নোটিফিকেশন থেকে রুম আইডি মুছে ফেলা
         const userNotifsSnap = await db.ref(`user_notifications/${uid}`).once('value');
         const userNotifs = userNotifsSnap.val() || {};
         for (const notifKey of Object.keys(userNotifs)) {
@@ -1651,7 +1652,7 @@
       openModal('modalRoom');
     }
 
-    // শুধুমাত্র এই ম্যাচে জয়েন করা প্লেয়ারদের পার্সোনাল নোটিফিকেশন পাঠানো
+    // রুম ক্রেডেনশিয়াল শুধুমাত্র ওই ম্যাচে জয়েন করা প্লেয়ারদের পার্সোনাল নোডে এবং OneSignal-এ পুশ করা
     async function handleSaveRoom(e) {
       e.preventDefault();
       const matchId = document.getElementById('roomMatchId').value;
@@ -1699,6 +1700,34 @@
         });
 
         await db.ref().update(updates);
+
+        // OneSignal Web Push API কল (ব্রাউজার পুরোপুরি ক্লোজ থাকলেও যাতে ব্যাকগ্রাউন্ড পুশ চলে যায়)
+        const ONESIGNAL_APP_ID = "453902a1-bb12-4edb-8f7d-20f6b0e0bb3c";
+        const ONESIGNAL_REST_KEY = "os_v2_app_zxf7i2vtorbqdnpw77dak2mr4d7fazkvc4kef4nt372fuahhb3enz4gdluzxffvoh6c3wbbukk6rzv7xghgnprvstp4qnxxr4aaetxi"; // আপনার OneSignal REST API Key দিন
+
+        if (ONESIGNAL_REST_KEY && ONESIGNAL_REST_KEY !== "os_v2_app_zxf7i2vtorbqdnpw77dak2mr4d7fazkvc4kef4nt372fuahhb3enz4gdluzxffvoh6c3wbbukk6rzv7xghgnprvstp4qnxxr4aaetxi") {
+          try {
+            await fetch("https://onesignal.com/api/v1/notifications", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json; charset=utf-8",
+                "Authorization": `Basic ${ONESIGNAL_REST_KEY}`
+              },
+              body: JSON.stringify({
+                app_id: ONESIGNAL_APP_ID,
+                include_aliases: {
+                  external_id: participantUids
+                },
+                target_channel: "push",
+                headings: { "en": "🔑 রুম আইডি ও পাসওয়ার্ড দেওয়া হয়েছে!" },
+                contents: { "en": `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}।` },
+                url: "https://rdxa3219-coder.github.io/rdx-bd-tour/"
+              })
+            });
+          } catch (pushErr) {
+            console.warn('OneSignal Push delivery failed:', pushErr);
+          }
+        }
 
         closeModal('modalRoom');
         showToast(`সফলভাবে ${participantUids.length} জন জয়েন করা প্লেয়ারের কাছে নোটিফিকেশন পাঠানো হয়েছে!`, 'success');
