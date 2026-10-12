@@ -1061,8 +1061,8 @@
               <div class="avatar-inner" id="profileAvatarInitials">BD</div>
             </div>
             <div style="flex: 1;">
-              <h3 id="profileName" style="font-size: 20px; font-weight: 700; margin-bottom: 2px;">Loading...</h3>
-              <p id="profilePhone" style="font-size: 13px; opacity: 0.9;">Please wait</p>
+              <h3 id="profileName" style="font-size: 20px; font-weight: 700; margin-bottom: 2px;">Player</h3>
+              <p id="profilePhone" style="font-size: 13px; opacity: 0.9;">Loading...</p>
             </div>
             <button class="icon-btn" onclick="openSubpage('subEditProfile')" style="background: rgba(255,255,255,0.25); border: none; color: #FFF;">
               <i data-lucide="edit-3" style="width: 18px; height: 18px;"></i>
@@ -1484,7 +1484,7 @@
 
     let currentUser = null;
     let currentUserData = null;
-    let isUserDataReady = false; // ডাটা নিশ্চিতভাবে লোড হওয়ার ফ্ল্যাগ
+    let isUserDataReady = false;
     let appSettings = {};
     let cacheMatches = {};
     let cacheCategories = {};
@@ -1549,7 +1549,6 @@
       requestAnimationFrame(step);
     }
 
-    // ১. নিরাপদ ডিভাইস সেশন তৈরি
     async function registerDeviceSession(uid) {
       const newSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
       currentActiveSessionId = newSessionId;
@@ -1558,7 +1557,6 @@
       return newSessionId;
     }
 
-    // ২. সিঙ্গেল ডিভাইস সেশন লিসেনার
     function listenForSingleDeviceSession(uid) {
       const sessionRef = db.ref(`users/${uid}/currentSessionId`);
       sessionRef.on('value', (snapshot) => {
@@ -1569,6 +1567,7 @@
           sessionRef.off();
           auth.signOut();
           localStorage.removeItem('my_device_session_id');
+          localStorage.removeItem('cached_user_profile');
           currentActiveSessionId = null;
           isUserDataReady = false;
           alert('আপনার অ্যাকাউন্টটি অন্য একটি ফোনে লগইন করা হয়েছে! আপনাকে সাইন-আউট করা হলো।');
@@ -1578,7 +1577,6 @@
       activeListeners.push(sessionRef);
     }
 
-    // ৩. মূল Auth স্টেট হ্যান্ডলার
     auth.onAuthStateChanged(async (user) => {
       if (user) {
         currentUser = user;
@@ -1588,6 +1586,7 @@
           await registerDeviceSession(user.uid);
         }
 
+        renderUserProfile(); // ক্যাশ থেকে সরাসরি নাম ও ব্যালেন্স দেখানো
         listenForSingleDeviceSession(user.uid);
         attachRealtimeListeners();
         listenToUserSpecificNotifications(user.uid);
@@ -1639,11 +1638,14 @@
         const userRef = db.ref(`users/${currentUser.uid}`);
         userRef.on('value', (snap) => {
           const data = snap.val();
-          if (!data) return; // সার্ভার থেকে ডাটা না আসা পর্যন্ত অপেক্ষা করবে
+          if (!data) return;
 
           currentUserData = data;
-          isUserDataReady = true; // ডাটা প্রস্তুত
-          
+          isUserDataReady = true;
+
+          // ব্যাকগ্রাউন্ড থেকে ফিরে আসলেও যাতে না হারায় তাই লোকাল স্টোরেজে সংরক্ষণ
+          localStorage.setItem('cached_user_profile', JSON.stringify(data));
+
           if (currentUserData.banned) {
             auth.signOut();
             showToast('Your account has been suspended.', 'error');
@@ -1826,7 +1828,7 @@
       renderMatches();
     }
 
-    // ৪. ম্যাচ কার্ড রেন্ডার (Ongoing ও Finished ম্যাচে Join বাটন বন্ধ)
+    // Ongoing ও Finished ম্যাচে জয়েন বাটন বন্ধ রাখার লজিক
     function renderMatches() {
       const container = document.getElementById('matchesContainer');
       const homeFeatured = document.getElementById('homeMatchesContainer');
@@ -1860,7 +1862,6 @@
             </div>
           `;
         } else if (isOngoing) {
-          // ম্যাচ শুরু হয়ে গেলে নতুন কেউ জয়েন করতে পারবে না
           actionBtn = `<button class="btn btn-warning" disabled style="opacity: 0.75; cursor: not-allowed;"><i data-lucide="play" style="width: 14px;"></i> Ongoing</button>`;
         } else if (isFinished) {
           actionBtn = `<button class="btn btn-secondary" disabled style="opacity: 0.75; cursor: not-allowed;">Closed</button>`;
@@ -2031,12 +2032,15 @@
       });
     }
 
-    // ৫. প্রোফাইল লোড নিশ্চিতকরণ
+    // প্রোফাইল UI আপডেট এবং লোকাল ক্যাশ থেকে পুনরুদ্ধার
     function renderUserProfile() {
-      if (!currentUserData) return;
+      const cached = JSON.parse(localStorage.getItem('cached_user_profile') || '{}');
+      const uData = currentUserData || cached;
 
-      const uName = currentUserData.username || currentUserData.name || 'Player';
-      const uPhone = currentUserData.phone || currentUserData.phoneNumber || '01XXXXXXXXX';
+      if (!uData || (!uData.username && !uData.name)) return;
+
+      const uName = uData.username || uData.name || 'Player';
+      const uPhone = uData.phone || uData.phoneNumber || '';
 
       document.getElementById('profileName').textContent = uName;
       document.getElementById('profilePhone').textContent = uPhone;
@@ -2044,8 +2048,8 @@
       const initials = (uName || 'BD').substring(0, 2).toUpperCase();
       document.getElementById('profileAvatarInitials').textContent = initials;
 
-      const dep = Number(currentUserData.deposit) || 0;
-      const win = Number(currentUserData.winning) || 0;
+      const dep = Number(uData.deposit) || 0;
+      const win = Number(uData.winning) || 0;
       const total = dep + win;
 
       animateCountUp(document.getElementById('profileDepositBal'), 0, dep);
@@ -2056,30 +2060,29 @@
       animateCountUp(document.getElementById('walletWinBal'), 0, win);
       animateCountUp(document.getElementById('withdrawWinBalDisplay'), 0, win);
 
-      document.getElementById('referralCodeText').textContent = currentUserData.referCode || '------';
-      document.getElementById('referralCountVal').textContent = currentUserData.referralCount || 0;
-      document.getElementById('referralEarnedVal').textContent = currentUserData.referralEarned || 0;
+      document.getElementById('referralCodeText').textContent = uData.referCode || '------';
+      document.getElementById('referralCountVal').textContent = uData.referralCount || 0;
+      document.getElementById('referralEarnedVal').textContent = uData.referralEarned || 0;
 
       if (document.getElementById('editName')) {
-        document.getElementById('editName').value = currentUserData.username || currentUserData.name || '';
+        document.getElementById('editName').value = uName;
       }
       if (document.getElementById('editPhone')) {
-        document.getElementById('editPhone').value = currentUserData.phone || currentUserData.phoneNumber || '';
+        document.getElementById('editPhone').value = uPhone;
       }
     }
 
-    // ৬. ডাটা লোড না হওয়া পর্যন্ত ওয়ালেট ও ডিপোজিটে প্রবেশ ব্লক রাখা
     function openWalletSafely() {
-      if (!isUserDataReady || !currentUserData) {
-        showToast('প্রোফাইল লোড হচ্ছে, অনুগ্রহ করে ২ সেকেন্ড অপেক্ষা করুন...', 'warning');
+      if (!isUserDataReady && !localStorage.getItem('cached_user_profile')) {
+        showToast('প্রোফাইল লোড হচ্ছে, কিছুক্ষণ অপেক্ষা করুন...', 'warning');
         return;
       }
       openSubpage('subWallet');
     }
 
     function openAddMoneySafely() {
-      if (!isUserDataReady || !currentUserData) {
-        showToast('প্রোফাইল তথ্য লোড হচ্ছে, কিছুক্ষণ অপেক্ষা করুন...', 'warning');
+      if (!isUserDataReady && !localStorage.getItem('cached_user_profile')) {
+        showToast('প্রোফাইল লোড হচ্ছে, কিছুক্ষণ অপেক্ষা করুন...', 'warning');
         return;
       }
       openSubpage('subAddMoney');
@@ -2152,13 +2155,13 @@
       const match = cacheMatches[matchId];
       if (!match) return;
 
-      // Ongoing ও Finished ম্যাচে জয়েন ব্লক
       if (match.status === 'Ongoing' || match.status === 'Finished') {
         showToast('এই ম্যাচটি ইতিমধ্যে শুরু হয়ে গেছে, নতুন জয়েন বন্ধ রয়েছে।', 'warning');
         return;
       }
 
-      if (!isUserDataReady || !currentUserData) {
+      const uData = currentUserData || JSON.parse(localStorage.getItem('cached_user_profile') || '{}');
+      if (!uData.username && !uData.name) {
         showToast('আপনার প্রোফাইল তথ্য লোড হচ্ছে, কিছুক্ষণ অপেক্ষা করুন...', 'warning');
         return;
       }
@@ -2166,7 +2169,7 @@
       joiningMatchId = matchId;
       document.getElementById('joinSheetMatchTitle').textContent = match.title;
       document.getElementById('joinSheetFee').textContent = match.entry_fee || 0;
-      const userTotal = (Number(currentUserData.deposit) || 0) + (Number(currentUserData.winning) || 0);
+      const userTotal = (Number(uData.deposit) || 0) + (Number(uData.winning) || 0);
       document.getElementById('joinSheetUserBal').textContent = userTotal;
       document.getElementById('joinSheetIGN').value = '';
 
@@ -2187,9 +2190,10 @@
         return;
       }
 
+      const uData = currentUserData || JSON.parse(localStorage.getItem('cached_user_profile') || '{}');
       const fee = Number(match.entry_fee) || 0;
-      let depBal = Number(currentUserData.deposit) || 0;
-      let winBal = Number(currentUserData.winning) || 0;
+      let depBal = Number(uData.deposit) || 0;
+      let winBal = Number(uData.winning) || 0;
 
       if ((depBal + winBal) < fee) {
         showToast('Insufficient balance. Please add money.', 'error');
@@ -2203,7 +2207,7 @@
 
       try {
         await db.ref(`match_participants/${joiningMatchId}/${currentUser.uid}`).set({
-          username: currentUserData.username || 'Player',
+          username: uData.username || uData.name || 'Player',
           ign: ign,
           result: null,
           prize_earned: 0
@@ -2278,11 +2282,11 @@
       showToast('Number copied to clipboard!', 'success');
     }
 
-    // ৭. ইউজার ডাটা প্রস্তুত না হওয়া পর্যন্ত ডিপোজিট বন্ধ রাখা
     async function handleVerifyDeposit(e) {
       e.preventDefault();
 
-      if (!currentUser || !isUserDataReady || !currentUserData) {
+      const uData = currentUserData || JSON.parse(localStorage.getItem('cached_user_profile') || '{}');
+      if (!currentUser || (!uData.username && !uData.name)) {
         showToast('আপনার প্রোফাইল তথ্য এখনো লোড হয়নি। অনুগ্রহ করে ২-৩ সেকেন্ড পর চেষ্টা করুন।', 'warning');
         return;
       }
@@ -2307,8 +2311,8 @@
 
       try {
         const uid = currentUser.uid;
-        const uPhone = currentUserData.phone || currentUserData.phoneNumber || 'N/A';
-        const uName = currentUserData.username || currentUserData.name || 'Player';
+        const uPhone = uData.phone || uData.phoneNumber || 'N/A';
+        const uName = uData.username || uData.name || 'Player';
 
         await db.ref(`Auto_Pay/${trxId}`).set({
           amount: amt,
@@ -2344,7 +2348,8 @@
     async function handleWithdrawSubmit(e) {
       e.preventDefault();
 
-      if (!isUserDataReady || !currentUserData) {
+      const uData = currentUserData || JSON.parse(localStorage.getItem('cached_user_profile') || '{}');
+      if (!uData.username && !uData.name) {
         showToast('প্রোফাইল লোড হচ্ছে, কিছুক্ষণ অপেক্ষা করুন...', 'warning');
         return;
       }
@@ -2353,7 +2358,7 @@
       const amt = Number(document.getElementById('wdAmount').value);
       const method = document.querySelector('input[name="wdMethod"]:checked').value;
 
-      const winBal = Number(currentUserData.winning) || 0;
+      const winBal = Number(uData.winning) || 0;
       const minWd = Number(appSettings.min_withdraw) || 50;
 
       if (amt < minWd) {
@@ -2372,7 +2377,7 @@
 
         const wdRef = await db.ref('withdrawals').push({
           uid: currentUser.uid,
-          username: currentUserData.username || 'Player',
+          username: uData.username || uData.name || 'Player',
           amount: amt,
           method: method,
           number: num,
@@ -2506,7 +2511,7 @@
         const newSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
         localStorage.setItem('my_device_session_id', newSessionId);
 
-        await db.ref(`users/${uid}`).set({
+        const newUserData = {
           username: name,
           email: email,
           phone: phone,
@@ -2520,7 +2525,10 @@
           banned: false,
           currentSessionId: newSessionId,
           joinedAt: firebase.database.ServerValue.TIMESTAMP
-        });
+        };
+
+        await db.ref(`users/${uid}`).set(newUserData);
+        localStorage.setItem('cached_user_profile', JSON.stringify(newUserData));
 
         if (referrerUid) {
           const referrerBonus = Number(appSettings.refer_bonus_referrer) || 0;
@@ -2562,6 +2570,7 @@
     function handleLogout() {
       auth.signOut();
       localStorage.removeItem('my_device_session_id');
+      localStorage.removeItem('cached_user_profile');
       currentActiveSessionId = null;
       isUserDataReady = false;
       showToast('Logged out.', 'default');
