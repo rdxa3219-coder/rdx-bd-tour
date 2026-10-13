@@ -1533,7 +1533,7 @@
       }
     }
 
-    // ম্যাচ মুছে ফেলার সাথে সাথে প্লেয়ারদের পার্সোনাল নোটিফিকেশন থেকে রুম ক্রেডেনশিয়াল ক্লিন করা
+    // ম্যাচ মুছে ফেলার সাথে সাথে প্লেয়ারদের নোটিফিকেশন থেকে রুম আইডি মুছে ফেলা
     async function deleteMatch(matchId) {
       if (!confirm('আপনি কি নিশ্চিত এই ম্যাচটি মুছে ফেলতে চান? এটি মুছে দিলে প্লেয়ারদের নোটিফিকেশন থেকেও রুম আইডি মুছে যাবে।')) return;
       
@@ -1652,7 +1652,7 @@
       openModal('modalRoom');
     }
 
-    // রুম ক্রেডেনশিয়াল শুধুমাত্র ওই ম্যাচে জয়েন করা প্লেয়ারদের পার্সোনাল নোডে এবং OneSignal-এ পুশ করা
+    // রুম ক্রেডেনশিয়াল জয়েন করা প্লেয়ারদের পার্সোনাল নোডে এবং OneSignal-এ পুশ করা
     async function handleSaveRoom(e) {
       e.preventDefault();
       const matchId = document.getElementById('roomMatchId').value;
@@ -1675,7 +1675,6 @@
           ? dataMatches[matchId].title 
           : 'ট্যুরনামেন্ট ম্যাচ';
 
-        // ম্যাচে জয়েন করা ইউজারদের বের করা
         const snap = await db.ref(`match_participants/${matchId}`).once('value');
         const participants = snap.val() || {};
         const participantUids = Object.keys(participants);
@@ -1701,11 +1700,11 @@
 
         await db.ref().update(updates);
 
-        // OneSignal Web Push API কল (ব্রাউজার পুরোপুরি ক্লোজ থাকলেও যাতে ব্যাকগ্রাউন্ড পুশ চলে যায়)
+        // OneSignal Web Push API কল (সংশোধিত ও সঠিক কন্ডিশন)
         const ONESIGNAL_APP_ID = "cdcbf46a-b374-4301-b5f6-ffc6056991e0";
-        const ONESIGNAL_REST_KEY = "os_v2_app_zxf7i2vtorbqdnpw77dak2mr4dgm7givcexu4j52rhvw3guqkt33gcnjrd3zjqnrzj3o6ijbcgmfkqlgfvmh2djnpfm6xq36pdxgxoi"; // আপনার OneSignal REST API Key দিন
+        const ONESIGNAL_REST_KEY = "os_v2_app_zxf7i2vtorbqdnpw77dak2mr4cacfm5it3xe5l5s55uphyln55w7vfnenupspcaxnpwreo7amqqff65ra36svgfsvm6lzg3ja2iru5y";
 
-        if (ONESIGNAL_REST_KEY && ONESIGNAL_REST_KEY !== "os_v2_app_zxf7i2vtorbqdnpw77dak2mr4dgm7givcexu4j52rhvw3guqkt33gcnjrd3zjqnrzj3o6ijbcgmfkqlgfvmh2djnpfm6xq36pdxgxoi") {
+        if (ONESIGNAL_REST_KEY) {
           try {
             await fetch("https://onesignal.com/api/v1/notifications", {
               method: "POST",
@@ -1720,7 +1719,7 @@
                 },
                 target_channel: "push",
                 headings: { "en": "🔑 রুম আইডি ও পাসওয়ার্ড দেওয়া হয়েছে!" },
-                contents: { "en": `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}।` },
+                contents: { "en": `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}। এখনই রুমে প্রবেশ করুন!` },
                 url: "https://rdxa3219-coder.github.io/rdx-bd-tour/"
               })
             });
