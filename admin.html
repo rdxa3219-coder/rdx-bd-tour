@@ -1141,10 +1141,6 @@
     const auth = firebase.auth();
     const db = firebase.database();
 
-    // নতুন কনফিগার করা OneSignal ক্রেডেনশিয়ালস
-    const ONESIGNAL_APP_ID = "cdcbf46a-b374-4301-b5f6-ffc6056991e0";
-    const ONESIGNAL_REST_KEY = "os_v2_app_zxf7i2vtorbqdnpw77dak2mr4cacfm5it3xe5l5s55uphyln55w7vfnenupspcaxnpwreo7amqqff65ra36svgfsvm6lzg3ja2iru5y";
-
     let dataMatches = {};
     let dataUsers = {};
     let dataCategories = {};
@@ -1632,6 +1628,7 @@
           date: firebase.database.ServerValue.TIMESTAMP
         });
 
+        // কিক করা ইউজারের ব্যক্তিগত নোটিফিকেশন থেকে রুম আইডি মুছে ফেলা
         const userNotifsSnap = await db.ref(`user_notifications/${uid}`).once('value');
         const userNotifs = userNotifsSnap.val() || {};
         for (const notifKey of Object.keys(userNotifs)) {
@@ -1690,7 +1687,7 @@
 
         const notifPayload = {
           title: `🔑 রুম আইডি ও পাসওয়ার্ড দেওয়া হয়েছে!`,
-          body: `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}। এখনই প্রবেশ করুন!`,
+          body: `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}। এখনই রুমে প্রবেশ করুন!`,
           matchId: matchId,
           sentAt: firebase.database.ServerValue.TIMESTAMP
         };
@@ -1703,7 +1700,10 @@
 
         await db.ref().update(updates);
 
-        // OneSignal Web Push API কল
+        // OneSignal Web Push API কল (সংশোধিত ও সঠিক কন্ডিশন)
+        const ONESIGNAL_APP_ID = "26e67f91-a541-456e-9c9b-2867ed2d178c";
+        const ONESIGNAL_REST_KEY = "os_v2_org_e3th7enfifcw5he3fbt62lixrsjdeowh6suesqvjntt2rt5irzrhcuj6wpi44fwqrrkyqmiiikh4geo3lbebiiuzrfjtcyymihfoobq";
+
         if (ONESIGNAL_REST_KEY) {
           try {
             await fetch("https://onesignal.com/api/v1/notifications", {
@@ -1719,7 +1719,7 @@
                 },
                 target_channel: "push",
                 headings: { "en": "🔑 রুম আইডি ও পাসওয়ার্ড দেওয়া হয়েছে!" },
-                contents: { "en": `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}। এখনই প্রবেশ করুন!` },
+                contents: { "en": `${matchTitle}-এর রুম আইডি: ${rId} এবং পাসওয়ার্ড: ${rPass}। এখনই রুমে প্রবেশ করুন!` },
                 url: "https://rdxa3219-coder.github.io/rdx-bd-tour/"
               })
             });
@@ -1736,55 +1736,6 @@
         if (btn) {
           btn.disabled = false;
           btn.innerText = "Broadcast Room Credentials";
-        }
-      }
-    }
-
-    // সমস্ত সাবস্ক্রাইবড ইউজারদের কাছে ব্রডকাস্ট পাঠানো
-    async function handleSendNotification(e) {
-      e.preventDefault();
-      const title = document.getElementById('notifTitle').value.trim();
-      const body = document.getElementById('notifBody').value.trim();
-      const btn = e.target.querySelector('button[type="submit"]');
-
-      if (btn) {
-        btn.disabled = true;
-        btn.innerText = "Sending Broadcast...";
-      }
-
-      try {
-        await db.ref('notifications').push({
-          title,
-          body,
-          sentAt: firebase.database.ServerValue.TIMESTAMP
-        });
-
-        if (ONESIGNAL_REST_KEY) {
-          await fetch("https://onesignal.com/api/v1/notifications", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json; charset=utf-8",
-              "Authorization": `Basic ${ONESIGNAL_REST_KEY}`
-            },
-            body: JSON.stringify({
-              app_id: ONESIGNAL_APP_ID,
-              included_segments: ["Total Subscriptions"],
-              headings: { "en": title },
-              contents: { "en": body },
-              url: "https://rdxa3219-coder.github.io/rdx-bd-tour/"
-            })
-          });
-        }
-
-        document.getElementById('notifTitle').value = '';
-        document.getElementById('notifBody').value = '';
-        showToast('সকল প্লেয়ারের কাছে সফলভাবে নোটিফিকেশন পাঠানো হয়েছে!', 'success');
-      } catch (err) {
-        showToast('নোটিফিকেশন পাঠাতে ব্যর্থ হয়েছে: ' + err.message, 'error');
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.innerText = "Send Notification";
         }
       }
     }
@@ -2257,6 +2208,25 @@
         showToast('TrxID রেকর্ডটি মুছে ফেলা হয়েছে।', 'default');
       } catch (err) {
         showToast('মুছতে ব্যর্থ হয়েছে: ' + err.message, 'error');
+      }
+    }
+
+    async function handleSendNotification(e) {
+      e.preventDefault();
+      const title = document.getElementById('notifTitle').value.trim();
+      const body = document.getElementById('notifBody').value.trim();
+
+      try {
+        await db.ref('notifications').push({
+          title,
+          body,
+          sentAt: firebase.database.ServerValue.TIMESTAMP
+        });
+        document.getElementById('notifTitle').value = '';
+        document.getElementById('notifBody').value = '';
+        showToast('Notification broadcast sent!', 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
       }
     }
 
