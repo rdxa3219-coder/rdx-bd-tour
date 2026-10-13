@@ -12,21 +12,18 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
   
-  <!-- OneSignal Web Push SDK (নতুন App ID যুক্ত) -->
+  <!-- OneSignal Web Push SDK -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function(OneSignal) {
       await OneSignal.init({
-        appId: "cdcbf46a-b374-4301-b5f6-ffc6056991e0",
+        appId: "26e67f91-a541-456e-9c9b-2867ed2d178c",
         notifyButton: {
           enable: false,
         },
         allowLocalhostAsSecureOrigin: true,
       });
-
-      // সরাসরি পুশ নোটিফিকেশন পারমিশন চাওয়া
-      await OneSignal.Notifications.requestPermission();
     });
   </script>
 
@@ -1685,6 +1682,7 @@
         });
         activeListeners.push(userRef);
 
+        // গ্লোবাল নোটিফিকেশন লিসেনার
         const notifRef = db.ref('notifications').limitToLast(30);
         notifRef.on('value', (snap) => {
           const val = snap.val() || {};
@@ -1693,6 +1691,7 @@
         });
         activeListeners.push(notifRef);
 
+        // জয়েন করা ম্যাচের ব্যক্তিগত নোটিফিকেশন লিসেনার
         const myPersonalNotifRef = db.ref(`user_notifications/${currentUser.uid}`);
         myPersonalNotifRef.on('value', (snap) => {
           const val = snap.val() || {};
@@ -2761,13 +2760,13 @@
       });
     }
 
-    async function handleNotificationIconClick() {
-      try {
-        if (window.OneSignal) {
-          await OneSignal.Notifications.requestPermission();
-        }
-      } catch (err) {
-        console.error("OneSignal Permission Error:", err);
+    function handleNotificationIconClick() {
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') {
+            showToast('নোটিফিকেশন সক্রিয় করা হয়েছে!', 'success');
+          }
+        });
       }
       openSubpage('subNotifications');
     }
